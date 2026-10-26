@@ -562,4 +562,16 @@ extension ItemCategorizer {
     static func proposedRefiles(db: Database, taxonomy: Taxonomy = Taxonomy.load()) async throws -> [(id: Int, name: String, oldPath: String, newPath: String)] {
         try await db.transaction { conn in try proposedRefiles(conn: conn, taxonomy: taxonomy) }
     }
+
+    /// Data migration v6 (user-approved, one-off): moves the manual-override rows listed by
+    /// `proposedRefiles` into the new categories. They stay manual overrides afterwards.
+    @discardableResult
+    static func applyManualRefilesV6(_ c: SQLConnection, taxonomy: Taxonomy) throws -> Int {
+        let refiles = try proposedRefiles(conn: c, taxonomy: taxonomy)
+        for refile in refiles {
+            guard let target = taxonomy.keywordPath(forNormalizedName: refile.name) else { continue }
+            try setPath(c, id: refile.id, target)
+        }
+        return refiles.count
+    }
 }

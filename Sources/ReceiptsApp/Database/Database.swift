@@ -270,6 +270,10 @@ actor Database {
         Migration(version: 5, name: "taxonomy v5 renames and keyword refile") { c, _ in
             try ItemCategorizer.applyTaxonomyV5(c, taxonomy: Taxonomy.load())
         },
+        // 6: re-file manual-override rows the v5 keyword rules would move (approved by the user).
+        Migration(version: 6, name: "re-file manual overrides into new categories") { c, _ in
+            try ItemCategorizer.applyManualRefilesV6(c, taxonomy: Taxonomy.load())
+        },
     ]
 
     static var latestSchemaVersion: Int { migrations.last?.version ?? 0 }
