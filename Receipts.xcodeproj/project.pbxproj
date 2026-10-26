@@ -39,6 +39,9 @@
 		000000000000000000100051 /* LLMSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100050 /* LLMSettings.swift */; };
 		000000000000000000100053 /* ProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100052 /* ProviderFactory.swift */; };
 		000000000000000000100055 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100054 /* SettingsView.swift */; };
+		000000000000000000100057 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100056 /* KeychainStore.swift */; };
+		000000000000000000100059 /* AnthropicAPIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100058 /* AnthropicAPIProvider.swift */; };
+		00000000000000000010005B /* ClaudeCLIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010005A /* ClaudeCLIProvider.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -75,6 +78,9 @@
 		000000000000000000100050 /* LLMSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMSettings.swift; sourceTree = "<group>"; };
 		000000000000000000100052 /* ProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderFactory.swift; sourceTree = "<group>"; };
 		000000000000000000100054 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		000000000000000000100056 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		000000000000000000100058 /* AnthropicAPIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicAPIProvider.swift; sourceTree = "<group>"; };
+		00000000000000000010005A /* ClaudeCLIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCLIProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -141,6 +147,9 @@
 				00000000000000000010004E /* OllamaProvider.swift */,
 				000000000000000000100050 /* LLMSettings.swift */,
 				000000000000000000100052 /* ProviderFactory.swift */,
+				000000000000000000100056 /* KeychainStore.swift */,
+				000000000000000000100058 /* AnthropicAPIProvider.swift */,
+				00000000000000000010005A /* ClaudeCLIProvider.swift */,
 			);
 			path = Pipeline;
 			sourceTree = "<group>";
@@ -278,6 +287,9 @@
 				000000000000000000100051 /* LLMSettings.swift in Sources */,
 				000000000000000000100053 /* ProviderFactory.swift in Sources */,
 				000000000000000000100055 /* SettingsView.swift in Sources */,
+				000000000000000000100057 /* KeychainStore.swift in Sources */,
+				000000000000000000100059 /* AnthropicAPIProvider.swift in Sources */,
+				00000000000000000010005B /* ClaudeCLIProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

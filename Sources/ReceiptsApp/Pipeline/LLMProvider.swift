@@ -113,15 +113,19 @@ extension FallbackProvider: LLMProviderHealth where Provider == any LLMProviderH
         self.init(providers: providers, providerIds: ids)
     }
 
-    /// Ready if any backend in the chain is ready; otherwise all warnings, labelled.
+    /// Checks every backend in the chain (so a fallback Ollama gets started up front, not on the
+    /// first failure). Ready when the primary is; otherwise the warnings, labelled, noting
+    /// whether a fallback can take over.
     func readiness() async -> ProviderStatus {
-        var warnings: [String] = []
+        var statuses: [(id: String, status: ProviderStatus)] = []
         for (provider, providerId) in zip(providers, providerIds) {
-            switch await provider.readiness() {
-            case .ready: return .ready
-            case .warning(let message): warnings.append("\(providerId): \(message)")
-            }
+            statuses.append((providerId, await provider.readiness()))
         }
-        return warnings.isEmpty ? .ready : .warning(warnings.joined(separator: "\n"))
+        guard let primary = statuses.first, primary.status != .ready else { return .ready }
+        let warnings = statuses.compactMap { entry in entry.status.warningMessage.map { "\(entry.id): \($0)" } }
+        if let fallback = statuses.dropFirst().first(where: { $0.status == .ready }) {
+            return .warning(warnings.joined(separator: "\n") + "\nUsing \(fallback.id) as fallback.")
+        }
+        return .warning(warnings.joined(separator: "\n"))
     }
 }

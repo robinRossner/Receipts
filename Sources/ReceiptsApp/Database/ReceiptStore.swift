@@ -75,12 +75,14 @@ final class ReceiptStore: ObservableObject {
     /// Called by SettingsView after any change: rebuilds the providers from the stored settings
     /// and, if anything backend-related changed, re-checks readiness (debounced, since text
     /// fields report every keystroke). Receipts already processing keep their old services.
-    func applySettings() {
+    /// `secretsChanged`: an API key / token was saved or cleared in the Keychain, which the
+    /// UserDefaults-backed settings can't see.
+    func applySettings(secretsChanged: Bool = false) {
         let newSettings = LLMSettings.load()
-        guard newSettings != settings else { return }
+        guard newSettings != settings || secretsChanged else { return }
         var backendOnly = newSettings
         backendOnly.debugDump = settings.debugDump
-        let backendChanged = backendOnly != settings
+        let backendChanged = backendOnly != settings || secretsChanged
         settings = newSettings
         services = ProviderFactory.makeServices(settings: newSettings, env: env)
         guard backendChanged else { return }

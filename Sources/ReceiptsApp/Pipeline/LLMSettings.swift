@@ -5,14 +5,23 @@ import Foundation
 /// and add its section in SettingsView.backendSection.
 enum LLMBackend: String, CaseIterable, Identifiable, Sendable {
     case ollama
+    case anthropicAPI
+    case claudeSubscriptionToken
+    case claudeCodeLogin
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .ollama: return "Ollama (local)"
+        case .anthropicAPI: return "Claude API (API key)"
+        case .claudeSubscriptionToken: return "Claude subscription token"
+        case .claudeCodeLogin: return "Claude Code CLI (existing login)"
         }
     }
+
+    /// Sends receipt data to Anthropic (privacy note + optional Ollama fallback).
+    var isClaude: Bool { self != .ollama }
 }
 
 /// User-editable AI settings, stored in UserDefaults. SettingsView binds the same keys through
@@ -24,6 +33,10 @@ struct LLMSettings: Sendable, Equatable {
         static let ollamaVisionModel = "llm.ollama.visionModel"
         static let ollamaTextModel = "llm.ollama.textModel"
         static let ollamaUseSchemaFormat = "llm.ollama.useSchemaFormat"
+        static let anthropicModel = "llm.anthropic.model"
+        static let claudeCLIPath = "llm.claudeCLI.path"
+        static let claudeCLIModel = "llm.claudeCLI.model"
+        static let fallbackToOllama = "llm.fallbackToOllama"
         static let debugDump = "pipeline.debugDump"
     }
 
@@ -32,6 +45,14 @@ struct LLMSettings: Sendable, Equatable {
     var ollamaVisionModel: String
     var ollamaTextModel: String
     var ollamaUseSchemaFormat: Bool
+    /// Messages API model id (Claude API backend).
+    var anthropicModel: String
+    /// Empty = auto-detect (ClaudeCLILocator). Secrets (API key, token) live in KeychainStore, not here.
+    var claudeCLIPath: String
+    /// `--model` for the CLI backends; an alias like "haiku" or a full model id.
+    var claudeCLIModel: String
+    /// With a Claude backend selected, retry failed calls on local Ollama.
+    var fallbackToOllama: Bool
     /// Write each extraction to debug_output/<name>.json.
     var debugDump: Bool
 
@@ -42,6 +63,10 @@ struct LLMSettings: Sendable, Equatable {
         ollamaTextModel: "qwen2.5:7b-instruct",
         // Plain JSON mode is what extraction quality was tuned on; schema-constrained output is opt-in.
         ollamaUseSchemaFormat: false,
+        anthropicModel: "claude-haiku-5-5",
+        claudeCLIPath: "",
+        claudeCLIModel: "haiku",
+        fallbackToOllama: true,
         debugDump: true
     )
 
@@ -57,6 +82,10 @@ struct LLMSettings: Sendable, Equatable {
             ollamaVisionModel: string(Keys.ollamaVisionModel, d.ollamaVisionModel),
             ollamaTextModel: string(Keys.ollamaTextModel, d.ollamaTextModel),
             ollamaUseSchemaFormat: store.object(forKey: Keys.ollamaUseSchemaFormat) as? Bool ?? d.ollamaUseSchemaFormat,
+            anthropicModel: string(Keys.anthropicModel, d.anthropicModel),
+            claudeCLIPath: store.string(forKey: Keys.claudeCLIPath)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? d.claudeCLIPath,
+            claudeCLIModel: string(Keys.claudeCLIModel, d.claudeCLIModel),
+            fallbackToOllama: store.object(forKey: Keys.fallbackToOllama) as? Bool ?? d.fallbackToOllama,
             debugDump: store.object(forKey: Keys.debugDump) as? Bool ?? d.debugDump
         )
     }

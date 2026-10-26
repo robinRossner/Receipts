@@ -31,13 +31,27 @@ enum ProviderFactory {
                 logDirectory: env.logDir
             )
             return Backend(id: provider.id, extraction: provider, classification: provider, health: provider)
+        case .anthropicAPI:
+            let provider = AnthropicAPIProvider(apiKey: KeychainStore.read(.anthropicAPIKey), model: settings.anthropicModel)
+            return Backend(id: provider.id, extraction: provider, classification: provider, health: provider)
+        case .claudeSubscriptionToken, .claudeCodeLogin:
+            let provider = ClaudeCLIProvider(
+                authMode: backend == .claudeSubscriptionToken ? .oauthToken : .existingLogin,
+                binaryPath: ClaudeCLILocator.resolve(configured: settings.claudeCLIPath),
+                model: settings.claudeCLIModel,
+                oauthToken: backend == .claudeSubscriptionToken ? KeychainStore.read(.claudeOAuthToken) : nil
+            )
+            return Backend(id: provider.id, extraction: provider, classification: provider, health: provider)
         }
     }
 
-    /// The backends to try, in order. Today just the selected one; a "fallback backend" setting
-    /// would append here and FallbackProvider takes care of the rest.
+    /// The backends to try, in order: the selected one, then local Ollama when a Claude backend
+    /// is selected and "Fall back to local Ollama" is on. Ollama is only started/checked when it
+    /// is in this chain.
     static func backendChain(for settings: LLMSettings) -> [LLMBackend] {
-        [settings.backend]
+        var chain = [settings.backend]
+        if settings.backend.isClaude && settings.fallbackToOllama { chain.append(.ollama) }
+        return chain
     }
 
     static func makeServices(settings: LLMSettings, env: AppEnvironment) -> PipelineServices {
