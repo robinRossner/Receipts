@@ -1,44 +1,92 @@
 {
   "categories": {
     "Food": {
-      "Vegetables": ["Tomatoes", "Leafy Greens", "Root Vegetables", "Peppers", "Onions & Garlic", "Mushrooms", "Cucumbers & Squash", "Other Vegetables"],
-      "Fruits": ["Berries", "Citrus", "Bananas", "Apples & Pears", "Other Fruits"],
-      "Dairy & Eggs": ["Milk", "Cheese", "Yogurt", "Eggs", "Butter & Cream"],
-      "Meat & Fish": ["Poultry", "Beef & Pork", "Fish & Seafood", "Cold Cuts"],
+      "Vegetables": ["Tomatoes", "Leafy Greens", "Root Vegetables", "Peppers", "Onions & Garlic", "Mushrooms", "Cucumbers, Squash & Eggplant", "Herbs & Aromatics", "Cabbage & Brassicas", "Other Vegetables"],
+      "Fruits": ["Berries", "Grapes", "Citrus", "Bananas", "Apples & Pears", "Tropical & Stone Fruit", "Other Fruits"],
+      "Dairy & Eggs": ["Milk", "Cheese", "Cream Cheese", "Yogurt, Skyr & Quark", "Eggs", "Butter & Cream"],
+      "Meat & Fish": ["Poultry", "Beef & Pork", "Ham & Cured Meat", "Fish & Seafood", "Cold Cuts"],
       "Bakery": ["Bread", "Pastries"],
-      "Pantry": ["Pasta & Rice", "Canned Goods", "Sauces & Condiments", "Spices", "Baking", "Spreads", "Oils & Vinegar"],
-      "Beverages": ["Water", "Soft Drinks", "Juice", "Coffee & Tea", "Beer", "Wine & Spirits"],
-      "Snacks & Sweets": ["Chips & Snacks", "Chocolate & Candy", "Cookies", "Nuts & Dried Fruit"],
-      "Frozen & Ready Meals": ["Frozen Pizza", "Ready Meals", "Frozen Vegetables", "Ice Cream"]
+      "Pantry": ["Pasta & Rice", "Cereals & Muesli", "Legumes", "Canned Goods", "Sauces & Condiments", "Spices", "Baking & Sugar", "Spreads", "Oils & Vinegar"],
+      "Beverages": ["Water", "Soft Drinks", "Juice", "Coffee & Tea", "Beer", "Wine", "Spirits"],
+      "Snacks & Sweets": ["Chips & Snacks", "Chocolate & Candy", "Cookies", "Nuts, Seeds & Dried Fruit"],
+      "Frozen & Ready Meals": ["Frozen Pizza", "Ready Meals", "Frozen Fruit & Vegetables", "Ice Cream"]
     },
     "Household": {
       "Cleaning": ["Laundry", "Surface Cleaners", "Dishwashing"],
-      "Paper Goods": ["Toilet Paper", "Kitchen Roll", "Tissues"]
+      "Paper Goods": ["Toilet Paper", "Kitchen Roll", "Tissues"],
+      "Household Goods": ["Foils, Baking Paper & Bin Bags", "Household Goods & Batteries"]
     },
     "Personal Care": {
       "Hygiene": ["Shower & Bath", "Oral Care", "Deodorant"],
-      "Cosmetics": ["Skincare", "Haircare", "Makeup"]
+      "Cosmetics": ["Skincare", "Haircare", "Makeup", "Sun Care"]
     },
     "Other": {
-      "Pharmacy": [],
+      "Pharmacy": ["First Aid & Plasters", "Supplements", "General"],
       "Pet Supplies": [],
       "Deposits & Refunds": ["Pfand", "Returns & Refunds"],
+      "Not a product": ["Receipt text"],
       "Miscellaneous": []
     }
   },
   "notes": {
     "Food > Vegetables > Tomatoes": "Includes cherry, roma, beefsteak, and all tomato varieties - group here by grocery-store convention even though botanically a fruit.",
-    "Food > Vegetables > Cucumbers & Squash": "Includes cucumbers, zucchini, pumpkin - also botanically fruits, group here anyway.",
-    "Food > Dairy & Eggs > Yogurt": "Includes yogurt, skyr, quark, and similar cultured dairy products.",
-    "Food > Pantry > Spreads": "Includes jam, honey, Nutella, peanut butter, chocolate spread, marmalade - anything spread on bread.",
-    "Food > Pantry > Pasta & Rice": "Includes fresh/refrigerated pasta too (Spätzle, Tortellini, etc.), not just dry pasta.",
-    "Food > Snacks & Sweets > Nuts & Dried Fruit": "Includes nuts, seeds (chia, sunflower, pumpkin), and dried fruit.",
+    "Food > Vegetables > Cucumbers, Squash & Eggplant": "Includes cucumbers, zucchini, pumpkin, eggplant/aubergine - also botanically fruits, group here anyway.",
+    "Food > Vegetables > Herbs & Aromatics": "Fresh herbs (basil, chives, parsley, dill, cilantro, mint) and fresh ginger. Dried herbs and ground spices go under Pantry > Spices.",
+    "Food > Vegetables > Cabbage & Brassicas": "Broccoli, cauliflower, Brussels sprouts, all cabbages (red, white, Chinese, savoy), kohlrabi. Not carbonated drinks (Kohlensaeure).",
+    "Food > Fruits > Tropical & Stone Fruit": "Avocado, kiwi, mango, pineapple, peach, nectarine, plum, apricot, cherry.",
+    "Food > Fruits > Grapes": "Fresh table grapes (Trauben). Grape juice goes under Beverages > Juice.",
+    "Food > Dairy & Eggs > Cream Cheese": "Frischkaese, Philadelphia and similar spreadable cream cheese - not hard/sliced Cheese and not Pantry > Spreads.",
+    "Food > Dairy & Eggs > Yogurt, Skyr & Quark": "Includes yogurt, skyr, quark/Speisequark, and similar cultured dairy products. Quark and Skyr are NOT cheese.",
+    "Food > Meat & Fish > Ham & Cured Meat": "Schinken, Rohschinken, Kochschinken, Serrano/Prosciutto, Speck, Bacon-style cured pork. Sliced sausage cold cuts stay under Cold Cuts.",
+    "Food > Pantry > Cereals & Muesli": "Oats (Haferflocken), muesli, granola, cornflakes and other breakfast cereals - Pantry, never Vegetables.",
+    "Food > Pantry > Legumes": "Dry or canned lentils, chickpeas, beans (kidney, white, black). Lentil/bean ready-made stews (Eintopf) are Ready Meals; fresh green beans are Vegetables.",
+    "Food > Pantry > Canned Goods": "Canned vegetables, tinned fish, canned fruit. Canned or dried lentils, chickpeas and beans go under Legumes instead.",
+    "Food > Pantry > Baking & Sugar": "Flour, sugar, baking powder, yeast, vanilla, icing. Baking paper is a household item, not a food.",
+    "Food > Pantry > Spreads": "Includes jam, honey, Nutella, peanut butter, chocolate spread, marmalade - anything spread on bread. Cream cheese goes under Dairy & Eggs > Cream Cheese.",
+    "Food > Pantry > Pasta & Rice": "Includes fresh/refrigerated pasta too (Spaetzle, Tortellini, etc.), not just dry pasta.",
+    "Food > Snacks & Sweets > Nuts, Seeds & Dried Fruit": "Includes nuts (walnuts, hazelnuts, almonds), seeds (chia, flax, sunflower, pumpkin), and dried fruit.",
     "Food > Frozen & Ready Meals > Frozen Pizza": "Includes all frozen or chilled ready-to-bake pizza - not Bakery, even though it has bread-like dough.",
+    "Food > Frozen & Ready Meals > Frozen Fruit & Vegetables": "All frozen vegetables, vegetable mixes (Pfannengemuese) and frozen fruit/berries.",
     "Food > Beverages > Beer": "Includes all beer, including alcohol-free (alkoholfrei) beer - group by product type, not alcohol content.",
+    "Food > Beverages > Wine": "Wine of all colours, sparkling wine and sekt. Not Schweinefleisch (pork) or wine vinegar.",
+    "Food > Beverages > Spirits": "Vodka, gin, whisky, rum, liqueurs and other hard liquor.",
+    "Household > Household Goods > Foils, Baking Paper & Bin Bags": "Aluminium foil, cling film, bio-waste bags, bin bags (Muellbeutel) and baking paper (Backpapier). Baking paper is NOT kitchen roll.",
+    "Household > Household Goods > Household Goods & Batteries": "Batteries, button cells (Knopfzellen), and general household odds and ends (glassware, tools, bags).",
     "Other > Deposits & Refunds > Pfand": "The deposit CHARGED when buying a bottle/container - item name is usually just 'Pfand', always a positive amount. Never merge into the drink it belongs to.",
     "Other > Deposits & Refunds > Returns & Refunds": "Empty bottles/containers being RETURNED for a refund - item name is usually 'Leergut', always negative or a refund. This is the opposite direction of Pfand, not the same thing.",
-    "Personal Care > Cosmetics > Skincare": "Includes body lotion, face cream, and moisturizers - even ones used in the bathroom/shower.",
+    "Other > Pharmacy > First Aid & Plasters": "Plasters, blister plasters, bandages and wound care.",
+    "Other > Pharmacy > Supplements": "Vitamins, minerals, magnesium and other dietary supplements.",
+    "Other > Not a product > Receipt text": "Receipt artifacts that are not purchases: Summe, Zwischensumme, Posten, Gesamt, bare amounts like '42,54 EUR'.",
+    "Personal Care > Cosmetics > Skincare": "Includes body lotion, face cream, and moisturizers - even ones used in the bathroom/shower. Sun protection products go under Sun Care.",
+    "Personal Care > Cosmetics > Sun Care": "Sunscreen, sun milk/lotion (Sonnenmilch, LSF/SPF) and after-sun products (e.g. Sundance) - not Pharmacy, not Skincare.",
     "Personal Care > Hygiene > Shower & Bath": "Only soap, shower gel, and bath/wash products. Lotions and creams go under Cosmetics > Skincare instead.",
     "Other > Miscellaneous > General": "Use only when genuinely unsure - flagged for manual review, not a dumping ground."
-  }
+  },
+  "keyword_rules": [
+    { "pattern": "^(summe|zwischensumme|posten|gesamt|gesamtsumme|total|r[uü]ckgeld|bar|mwst|\\d+(?:[.,  ]\\d+)? ?eur)$", "path": "Other > Not a product > Receipt text" },
+
+    { "pattern": "hafer(?:flocken|flakes)|m[uü]sli|granola", "exclude": "riegel|keks|drink|milch", "path": "Food > Pantry > Cereals & Muesli" },
+    { "pattern": "walnuss|haseln|mandel|(?<!kokos)n[uü]sse|(?<!erd)(?<!kokos)(?<!muskat)nuss|\\bchia|leinsamen", "exclude": "k[aä]se|ecken|butter|creme|nougat|aufstrich|riegel|schoko|[oö]l\\b|milch|drink|gem[uü]se", "path": "Food > Snacks & Sweets > Nuts, Seeds & Dried Fruit" },
+    { "pattern": "\\blinsen|\\bkichererbsen|\\bbohnen\\b", "exclude": "eintopf|suppe|salat|fertig", "path": "Food > Pantry > Legumes" },
+
+    { "pattern": "\\bskyr|quark", "path": "Food > Dairy & Eggs > Yogurt, Skyr & Quark" },
+    { "pattern": "frischk[aä]se|\\bphila(?:delphia)?\\b", "path": "Food > Dairy & Eggs > Cream Cheese" },
+
+    { "pattern": "trauben\\b", "path": "Food > Fruits > Grapes" },
+    { "pattern": "\\b(?:rot|wei(?:ß|ss)|ros[eé]|gl[uü]h|schaum|bio)?wein\\b|chardonnay|riesling|merlot", "path": "Food > Beverages > Wine" },
+    { "pattern": "\\bvodka|\\bwodka|\\bgin\\b|\\bwhisk|\\brum\\b(?! aroma)|lik[oö]r|absolut (?:citron|vodka)", "path": "Food > Beverages > Spirits" },
+
+    { "pattern": "sonnen(?:milch|creme|cr[eè]me|schutz|spray|lotion|stick|gel|[oö]l)|\\blsf|\\bspf|after ?sun|sundance", "path": "Personal Care > Cosmetics > Sun Care" },
+    { "pattern": "pflaster", "path": "Other > Pharmacy > First Aid & Plasters" },
+
+    { "pattern": "\\bm[uü]ll(?:b|s[aä]ck)|biofolie|alufolie|frischhaltefolie|gefrierbeutel", "path": "Household > Household Goods > Foils, Baking Paper & Bin Bags" },
+    { "pattern": "backpapier", "path": "Household > Household Goods > Foils, Baking Paper & Bin Bags" },
+    { "pattern": "knopfzelle|batterie", "path": "Household > Household Goods > Household Goods & Batteries" },
+
+    { "pattern": "\\bbasilik|\\bschnittlauch|\\bpetersilie|\\bdill\\b|\\bingwer\\b|\\bkoriander(?!pulver|samen)|\\bminze\\b", "exclude": "pesto|sauce|so(?:ß|ss)e|tee\\b|pulver|dressing|brot|aufstrich|gurke", "path": "Food > Vegetables > Herbs & Aromatics" },
+    { "pattern": "\\bbrokkoli|\\bbroccoli|rosenkohl|blumenkohl|kohlrabi|\\b\\w*kohl\\b|wirsing", "path": "Food > Vegetables > Cabbage & Brassicas" },
+    { "pattern": "avocado|kiwi|pfirsich|nektarin|mango(?!ld)|ananas", "exclude": "saft|tee\\b|joghurt|marmelade|konfit[uü]re|drink|schorle|smoothie|limo|riegel|chutney|sauce", "path": "Food > Fruits > Tropical & Stone Fruit" },
+
+    { "pattern": "schinken", "exclude": "pizza|toast|nudeln|tortellini|baguette|k[aä]se|br[oö]tchen|croissant", "path": "Food > Meat & Fish > Ham & Cured Meat" }
+  ]
 }

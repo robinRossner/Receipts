@@ -265,6 +265,11 @@ actor Database {
                 WHERE source_image IS NOT NULL AND substr(source_image, 1, length(?)) = ?
                 """, [.text(prefix), .text(prefix), .text(prefix)])
         },
+        // 5: taxonomy rework. Points item_dictionary rows at renamed/merged paths and re-files
+        // non-manual rows through the keyword rules (manual overrides only get pure renames).
+        Migration(version: 5, name: "taxonomy v5 renames and keyword refile") { c, _ in
+            try ItemCategorizer.applyTaxonomyV5(c, taxonomy: Taxonomy.load())
+        },
     ]
 
     static var latestSchemaVersion: Int { migrations.last?.version ?? 0 }

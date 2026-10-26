@@ -61,6 +61,8 @@ enum ItemCategorizer {
     - Alkf. = alkoholfrei (non-alcoholic)
     - Einw. = Einweg (single-use/disposable)
     - Bio = organic
+    - Bio E.Reg. = organic regional (Bio Eigenmarke Regional) - a label, not the product
+    - Hä. = Hähnchen (chicken)
     - Zungenreiniger = tongue cleaner
     - G&G / Gut&Günstig, Ja!, K-Classic, Rewe Beste Wahl = supermarket house brands, not the product type
     """
@@ -85,6 +87,8 @@ enum ItemCategorizer {
     - Classify by how it is sold and shopped, not strict biology (e.g. tomatoes, cucumbers, zucchini go under Vegetables even though botanically fruits).
     - Brand names and product-line marketing terms (e.g. "PRO+") don't affect the category - look at what the product actually is, not what it's called.
     - Classify each item on its own; being on the same receipt says nothing about its category.
+    - Oats (Haferflocken) and muesli are Pantry > Cereals & Muesli, never vegetables.
+    - Baking paper (Backpapier) is a household foil/paper item, not kitchen roll.
     - If genuinely unsure, use the number for "Other > Miscellaneous > General".
 
     Respond with ONLY this JSON, no explanation, no markdown fences - exactly one entry per item, using the item's index from the square brackets:
@@ -241,10 +245,11 @@ enum ItemCategorizer {
         return (results, providerIds)
     }
 
-    private static func logClassification(itemName: String, store: String?, attempt: Int, translation: String?, pathNumber: Int?, valid: Bool, provider: String, logURL: URL) {
+    private static func logClassification(itemName: String, store: String?, attempt: Int, translation: String?, pathNumber: Int?, valid: Bool, provider: String, logURL: URL, path: String? = nil) {
         var result: [String: Any] = [:]
         if let translation { result["translation_en"] = translation }
         if let pathNumber { result["path_number"] = pathNumber }
+        if let path { result["path"] = path }
         var entry: [String: Any] = [
             "timestamp": isoNow(),
             "item_name": itemName,
@@ -337,6 +342,8 @@ enum ItemCategorizer {
             let rawName: String
             var aliases: [String]
             var positions: [Int]
+            /// Set when a keyword rule decided the path (no LLM call needed).
+            var keywordPath: Taxonomy.Path?
         }
         var resolved: [Int: ItemDictionaryEntry] = [:]
         var newItems: [NewItem] = []
@@ -371,16 +378,38 @@ enum ItemCategorizer {
                 }
             }
 
-            newItems.append(NewItem(normalized: normalized, rawName: rawName, aliases: [normalized], positions: [position]))
+            // Dictionary missed: a keyword rule can still decide the path without the LLM.
+            newItems.append(NewItem(
+                normalized: normalized, rawName: rawName, aliases: [normalized], positions: [position],
+                keywordPath: taxonomy.keywordPath(forNormalizedName: normalized)
+            ))
         }
 
         var providerIds: [String] = []
         if !newItems.isEmpty {
-            let (classifications, answeredBy) = try await classifyWithLLM(
-                itemNames: newItems.map(\.rawName), taxonomy: taxonomy, storeName: storeName, logURL: logURL, provider: provider
-            )
-            providerIds = answeredBy
-            for (item, classification) in zip(newItems, classifications) {
+            let llmItems = newItems.filter { $0.keywordPath == nil }
+            var llmResults: [Classification] = []
+            if !llmItems.isEmpty {
+                let (classifications, answeredBy) = try await classifyWithLLM(
+                    itemNames: llmItems.map(\.rawName), taxonomy: taxonomy, storeName: storeName, logURL: logURL, provider: provider
+                )
+                llmResults = classifications
+                providerIds = answeredBy
+            }
+            var llmIterator = llmResults.makeIterator()
+            for item in newItems {
+                let classification: Classification
+                if let kw = item.keywordPath {
+                    classification = Classification(translationEn: "", category: kw.category, subcategory: kw.subcategory, itemGroup: kw.itemGroup, needsReview: false)
+                    logClassification(
+                        itemName: item.rawName, store: storeName, attempt: 1, translation: nil, pathNumber: nil,
+                        valid: true, provider: "keyword", logURL: logURL, path: kw.label
+                    )
+                } else if let next = llmIterator.next() {
+                    classification = next
+                } else {
+                    continue
+                }
                 let now = isoNow()
                 let newId = try await db.run(
                     """
@@ -388,7 +417,7 @@ enum ItemCategorizer {
                     (canonical_name, display_name_de, translation_en, category, subcategory, item_group, aliases, needs_review, created_at, last_seen_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    [.text(item.normalized), .text(item.rawName), .text(classification.translationEn), .text(classification.category),
+                    [.text(item.normalized), .text(item.rawName), classification.translationEn.isEmpty ? .null : .text(classification.translationEn), .text(classification.category),
                      .text(classification.subcategory), .text(classification.itemGroup), .text(encodeStringArray(item.aliases)),
                      .from(classification.needsReview), .text(now), .text(now)]
                 )
@@ -411,5 +440,78 @@ enum ItemCategorizer {
             return entry
         }
         return (ordered, providerIds)
+    }
+}
+
+// MARK: - Taxonomy v5 data migration + keyword re-filing
+
+extension ItemCategorizer {
+    struct MigrationV5Result {
+        var renamed = 0
+        var refiled = 0
+        var refiledExamples: [(name: String, from: String, to: String)] = []
+    }
+
+    private static func path(of row: SQLRow, at i: Int) -> Taxonomy.Path {
+        Taxonomy.Path(row.string(i) ?? "", row.string(i + 1) ?? "", row.string(i + 2) ?? "")
+    }
+
+    private static func setPath(_ c: SQLConnection, id: Int, _ p: Taxonomy.Path) throws {
+        try c.run(
+            "UPDATE item_dictionary SET category = ?, subcategory = ?, item_group = ? WHERE id = ?",
+            [.text(p.category), .text(p.subcategory), .text(p.itemGroup), .from(id)]
+        )
+    }
+
+    /// Data migration v5. (1) Points every row (manual or not) at the new name of a renamed or
+    /// merged path; "Wine & Spirits" is split by keyword rule (Spirits if a rule says so, else Wine).
+    /// (2) Re-files rows with is_manual_override = 0 through the keyword rules. Manual rows are
+    /// never touched by step 2. Idempotent.
+    @discardableResult
+    static func applyTaxonomyV5(_ c: SQLConnection, taxonomy: Taxonomy) throws -> MigrationV5Result {
+        var result = MigrationV5Result()
+        let rows = try c.query("SELECT id, canonical_name, category, subcategory, item_group FROM item_dictionary")
+
+        for row in rows {
+            let id = row.int(0) ?? 0
+            let name = row.string(1) ?? ""
+            let current = path(of: row, at: 2)
+            if current == Taxonomy.oldWineAndSpirits {
+                let target = taxonomy.keywordPath(forNormalizedName: name) == Taxonomy.spirits ? Taxonomy.spirits : Taxonomy.wine
+                try setPath(c, id: id, target)
+                result.renamed += 1
+            } else if let rename = Taxonomy.migrationV5Renames.first(where: { $0.from == current }) {
+                try setPath(c, id: id, rename.to)
+                result.renamed += 1
+            }
+        }
+
+        let after = try c.query("SELECT id, canonical_name, category, subcategory, item_group FROM item_dictionary WHERE COALESCE(is_manual_override, 0) = 0")
+        for row in after {
+            let id = row.int(0) ?? 0
+            let name = row.string(1) ?? ""
+            let current = path(of: row, at: 2)
+            guard let target = taxonomy.keywordPath(forNormalizedName: name), target != current else { continue }
+            try setPath(c, id: id, target)
+            result.refiled += 1
+            result.refiledExamples.append((name, current.label, target.label))
+        }
+        return result
+    }
+
+    /// Manual-override rows (run AFTER v5's renames) that the keyword rules would move. Not wired
+    /// into any migration - the caller decides whether to apply them.
+    static func proposedRefiles(conn: SQLConnection, taxonomy: Taxonomy) throws -> [(id: Int, name: String, oldPath: String, newPath: String)] {
+        try conn.query("SELECT id, canonical_name, category, subcategory, item_group FROM item_dictionary WHERE is_manual_override = 1 ORDER BY id")
+            .compactMap { row in
+                let name = row.string(1) ?? ""
+                let current = path(of: row, at: 2)
+                guard let target = taxonomy.keywordPath(forNormalizedName: name), target != current else { return nil }
+                return (row.int(0) ?? 0, name, current.label, target.label)
+            }
+    }
+
+    static func proposedRefiles(db: Database, taxonomy: Taxonomy = Taxonomy.load()) async throws -> [(id: Int, name: String, oldPath: String, newPath: String)] {
+        try await db.transaction { conn in try proposedRefiles(conn: conn, taxonomy: taxonomy) }
     }
 }
