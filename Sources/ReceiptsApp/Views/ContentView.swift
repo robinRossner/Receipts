@@ -16,6 +16,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             topNav
             Rectangle().fill(AppTheme.rule).frame(height: 1)
+            if let error = store.lastError {
+                errorBanner(error)
+            }
             // Both pages stay mounted (never destroyed), same as dashboard.html's `hidden`
             // divs - so Overview's expand/collapse state survives switching tabs.
             ZStack {
@@ -55,6 +58,28 @@ struct ContentView: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
         .background(AppTheme.paper)
+    }
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("⚠ \(message)")
+                .font(AppTheme.body(12))
+                .foregroundColor(.white)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                store.lastError = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+        .background(AppTheme.penRed)
     }
 
     private func tabButton(_ title: String, _ target: AppPage) -> some View {

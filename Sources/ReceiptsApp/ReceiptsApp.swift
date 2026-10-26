@@ -8,7 +8,7 @@ struct ReceiptsApp: App {
         let env = AppEnvironment.bootstrap()
         let taxonomy = Taxonomy.load()
         // swiftlint:disable:next force_try - a broken/unwritable SQLite file here means the app can't function at all.
-        let db = try! Database(path: env.dbPath)
+        let db = try! Database(path: env.dbPath, dataDir: env.appSupportDir)
         _store = StateObject(wrappedValue: ReceiptStore(env: env, db: db, taxonomy: taxonomy))
     }
 

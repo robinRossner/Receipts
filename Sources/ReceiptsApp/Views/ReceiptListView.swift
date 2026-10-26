@@ -4,6 +4,8 @@ import SwiftUI
 /// "Reviewed" sections, each sorted by date descending.
 struct ReceiptListView: View {
     @EnvironmentObject var store: ReceiptStore
+    @State private var showDeleted = false
+    @State private var pendingPermanentDelete: ReceiptSummary?
 
     private var unreviewed: [ReceiptSummary] {
         store.receipts.filter { $0.reviewedAt == nil }.sorted { ($0.date ?? "") > ($1.date ?? "") }
@@ -40,8 +42,56 @@ struct ReceiptListView: View {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     section("Needs review", unreviewed)
                     section("Reviewed", reviewed)
+                    recentlyDeleted
                 }
             }
+        }
+        .confirmationDialog(
+            "Permanently delete this receipt?",
+            isPresented: Binding(get: { pendingPermanentDelete != nil }, set: { if !$0 { pendingPermanentDelete = nil } }),
+            presenting: pendingPermanentDelete
+        ) { receipt in
+            Button("Delete permanently", role: .destructive) {
+                Task { await store.permanentlyDeleteReceipt(id: receipt.id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This removes the receipt, its items and its image file. It cannot be undone.")
+        }
+    }
+
+    @ViewBuilder
+    private var recentlyDeleted: some View {
+        if !store.deletedReceipts.isEmpty {
+            DisclosureGroup(isExpanded: $showDeleted) {
+                ForEach(store.deletedReceipts) { receipt in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(receipt.store ?? "Unknown")
+                                .font(AppTheme.body(12, weight: .semibold))
+                                .foregroundColor(AppTheme.ink)
+                            Text("\(receipt.date ?? "") · \(fmtMoney(receipt.total))")
+                                .font(AppTheme.mono(11))
+                                .foregroundColor(AppTheme.inkSoft)
+                        }
+                        Spacer()
+                        Button("Restore") { Task { await store.restoreReceipt(id: receipt.id) } }
+                        Button("Delete permanently") { pendingPermanentDelete = receipt }
+                            .foregroundColor(AppTheme.penRed)
+                    }
+                    .buttonStyle(.plain)
+                    .font(AppTheme.body(11))
+                    .padding(8)
+                    .background(AppTheme.paper)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppTheme.rule, lineWidth: 1))
+                    .cornerRadius(4)
+                }
+            } label: {
+                Text("RECENTLY DELETED (\(store.deletedReceipts.count))")
+                    .font(AppTheme.body(11, weight: .medium))
+                    .foregroundColor(AppTheme.inkSoft)
+            }
+            .padding(.top, 8)
         }
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 enum PipelineFileError: Error, LocalizedError {
     case moveFailed(String)
@@ -15,6 +16,8 @@ struct ProcessResult: Sendable {
     var success: Bool
     var receiptId: Int?
     var errorMessage: String?
+    /// Set when the file's bytes match an already-imported (non-deleted) receipt; nothing was written.
+    var duplicateOf: Int?
 }
 
 /// Ports receipt_pipeline.py: orchestrates scan -> extract -> categorize -> store -> organize
@@ -113,9 +116,30 @@ enum ReceiptPipeline {
         )
     }
 
+    /// SHA-256 of the original file bytes, hex-encoded.
+    static func sha256Hex(ofFileAt path: String) throws -> String {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe)
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Runs one receipt through the full pipeline and stores it - mirrors process_receipt().
+    /// Order: hash/duplicate-check -> scan -> extract -> categorize every item -> ONE
+    /// transaction for the receipt row + all line items -> move the image into the archive.
+    /// `imagePath` is the uploads_incoming staging copy; it is deleted on every outcome except
+    /// "imported but archive move failed" (then the receipt row still points at it).
     static func processReceipt(imagePath: String, db: Database, env: AppEnvironment, taxonomy: Taxonomy) async -> ProcessResult {
+        var keepStagingFile = false
+        defer {
+            if !keepStagingFile { try? FileManager.default.removeItem(atPath: imagePath) }
+        }
         do {
+            let imageHash = try sha256Hex(ofFileAt: imagePath)
+            if let dup = try await db.queryOne(
+                "SELECT id FROM receipts WHERE image_hash = ? AND deleted_at IS NULL ORDER BY id LIMIT 1", [.text(imageHash)]
+            ), let dupId = dup.int(0) {
+                return ProcessResult(success: false, receiptId: nil, errorMessage: "Already imported (receipt #\(dupId))", duplicateOf: dupId)
+            }
+
             let warped = try DocumentScanner.scan(imagePath: imagePath)
             var extracted = try await ReceiptExtractor.extractAndValidate(image: warped)
             extracted.store = canonicalizeStore(extracted.store)
@@ -128,45 +152,85 @@ enum ReceiptPipeline {
                 }
             }
 
-            let now = isoNow()
-            let receiptId = try await db.run(
-                """
-                INSERT INTO receipts
-                (store, date, time, total, computed_sum, needs_review, review_reasons, source_image, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [.from(extracted.store), .from(extracted.date), .from(extracted.time),
-                 .from(extracted.total), .from(extracted.computedSum), .from(extracted.needsReview),
-                 .text(encodeStringArray(extracted.reviewReasons)), .text(imagePath), .text(now)]
-            )
-            let receiptIdInt = Int(receiptId)
-
-            do {
-                let organizedPath = try organizeImage(
-                    imagePath: imagePath, store: extracted.store, date: extracted.date,
-                    receiptId: receiptIdInt, archiveDir: env.archiveDir
-                )
-                try await db.run("UPDATE receipts SET source_image = ? WHERE id = ?", [.text(organizedPath), .from(receiptIdInt)])
-            } catch {
-                // Don't let a file-move problem lose an otherwise-good extraction.
-                print("Warning: could not organize image file (\(error)); left at original path.")
-            }
-
+            // Categorize everything before writing anything. item_dictionary upserts happen
+            // here, outside the receipt transaction - it's a shared cache, so entries created
+            // for a receipt that later fails are harmless.
+            var categorized: [(item: ExtractedItem, name: String, dictId: Int)] = []
             for item in extracted.items {
                 let itemName = item.name ?? item.rawText ?? ""
                 let dictEntry = try await ItemCategorizer.getOrCreateItem(
                     db: db, rawName: itemName, taxonomy: taxonomy, storeName: extracted.store, logURL: env.classificationLogURL
                 )
-                try await db.run(
+                categorized.append((item, itemName, dictEntry.id))
+            }
+
+            // Same store + date + total (and time, when both have one) as a live receipt:
+            // still import it, but flag it.
+            if let date = extracted.date, let total = extracted.total,
+               let dup = try await db.queryOne(
+                """
+                SELECT id FROM receipts
+                WHERE deleted_at IS NULL AND store = ? AND date = ? AND ABS(total - ?) < 0.005
+                  AND (time IS NULL OR ? IS NULL OR time = ?)
+                ORDER BY id LIMIT 1
+                """,
+                [.from(extracted.store), .text(date), .from(total), .from(extracted.time), .from(extracted.time)]
+               ), let dupId = dup.int(0) {
+                extracted.reviewReasons.append("Possible duplicate of receipt #\(dupId)")
+                extracted.needsReview = true
+            }
+
+            let now = isoNow()
+            let receiptIdInt = try await db.transaction { conn -> Int in
+                let receiptId = try conn.run(
                     """
-                    INSERT INTO line_items
-                    (receipt_id, item_dictionary_id, raw_text, name_de, quantity, unit_price, total_price, price_normalized)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO receipts
+                    (store, date, time, total, computed_sum, needs_review, review_reasons, source_image, created_at, image_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    [.from(receiptIdInt), .from(dictEntry.id), .from(item.rawText), .text(itemName),
-                     .from(item.quantity ?? 1.0), .from(item.unitPrice ?? 0.0), .from(item.totalPrice ?? 0.0),
-                     .from(item.priceNormalized)]
+                    [.from(extracted.store), .from(extracted.date), .from(extracted.time),
+                     .from(extracted.total), .from(extracted.computedSum), .from(extracted.needsReview),
+                     .text(encodeStringArray(extracted.reviewReasons)), .text(imagePath), .text(now), .text(imageHash)]
                 )
+                for entry in categorized {
+                    try conn.run(
+                        """
+                        INSERT INTO line_items
+                        (receipt_id, item_dictionary_id, raw_text, name_de, quantity, unit_price, total_price, price_normalized)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [.integer(receiptId), .from(entry.dictId), .from(entry.item.rawText), .text(entry.name),
+                         .from(entry.item.quantity ?? 1.0), .from(entry.item.unitPrice ?? 0.0), .from(entry.item.totalPrice ?? 0.0),
+                         .from(entry.item.priceNormalized)]
+                    )
+                }
+                return Int(receiptId)
+            }
+
+            // Committed. Now archive the image; the row currently points at the staging path.
+            do {
+                let organizedPath = try organizeImage(
+                    imagePath: imagePath, store: extracted.store, date: extracted.date,
+                    receiptId: receiptIdInt, archiveDir: env.archiveDir
+                )
+                do {
+                    try await db.run(
+                        "UPDATE receipts SET source_image = ? WHERE id = ?",
+                        [.text(env.storedImagePath(for: organizedPath)), .from(receiptIdInt)]
+                    )
+                } catch {
+                    // File moved but the row still says staging: put the file back so they agree.
+                    print("Warning: could not record archived image path (\(error)); restoring staging file.")
+                    if (try? FileManager.default.moveItem(atPath: organizedPath, toPath: imagePath)) == nil {
+                        print("Warning: could not restore \(organizedPath) to \(imagePath).")
+                    }
+                    keepStagingFile = true
+                }
+            } catch {
+                // Don't let a file-move problem lose an otherwise-good extraction: the row keeps
+                // pointing at the staging file, which we therefore must not delete.
+                print("Warning: could not organize image file (\(error)); left at \(imagePath).")
+                keepStagingFile = true
             }
 
             return ProcessResult(success: true, receiptId: receiptIdInt, errorMessage: nil)

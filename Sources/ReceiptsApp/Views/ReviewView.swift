@@ -17,16 +17,45 @@ struct ReviewView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
             UploadZoneView()
-            if let error = store.uploadError {
-                Text(error)
-                    .font(AppTheme.body(13))
-                    .foregroundColor(AppTheme.penRed)
+            if !store.uploadResults.isEmpty {
+                uploadResultsList
             }
             ReceiptListView()
         }
         .padding(20)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(AppTheme.desk)
+    }
+
+    /// Per-file outcome of the last upload batch.
+    private var uploadResultsList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("LAST UPLOAD")
+                    .font(AppTheme.body(11, weight: .medium))
+                    .foregroundColor(AppTheme.inkSoft)
+                Spacer()
+                Button("Clear") { store.uploadResults = [] }
+                    .buttonStyle(.plain)
+                    .font(AppTheme.body(11))
+                    .foregroundColor(AppTheme.inkSoft)
+                    .disabled(store.isProcessingUpload)
+            }
+            ForEach(store.uploadResults) { result in
+                switch result.outcome {
+                case .success(let id):
+                    Text("✓ \(result.fileName): imported as receipt #\(id)")
+                        .foregroundColor(AppTheme.ink)
+                case .duplicate(let id):
+                    Text("= \(result.fileName): Already imported (receipt #\(id))")
+                        .foregroundColor(AppTheme.inkSoft)
+                case .failure(let message):
+                    Text("✗ \(result.fileName): \(message)")
+                        .foregroundColor(AppTheme.penRed)
+                }
+            }
+            .font(AppTheme.body(12))
+        }
     }
 
     private var mainArea: some View {

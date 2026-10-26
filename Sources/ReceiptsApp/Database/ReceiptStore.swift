@@ -16,11 +16,26 @@ final class ReceiptStore: ObservableObject {
         let token: UUID
     }
 
+    /// Outcome of one file in a batch upload.
+    struct UploadResult: Identifiable {
+        enum Outcome {
+            case success(receiptId: Int)
+            case duplicate(receiptId: Int)
+            case failure(String)
+        }
+        let id = UUID()
+        let fileName: String
+        let outcome: Outcome
+    }
+
     @Published var receipts: [ReceiptSummary] = []
     @Published var selectedReceipt: ReceiptDetail?
     @Published var isProcessingUpload = false
     @Published var uploadProgressLabel: String?
-    @Published var uploadError: String?
+    @Published var uploadResults: [UploadResult] = []
+    @Published var deletedReceipts: [ReceiptSummary] = []
+    /// Last failed database/file operation, shown as a dismissible banner in ContentView.
+    @Published var lastError: String?
     @Published var ollamaWarning: String?
     @Published var highlightRequest: HighlightRequest?
 
@@ -37,6 +52,10 @@ final class ReceiptStore: ObservableObject {
         self.taxonomy = taxonomy
     }
 
+    private func report(_ action: String, _ error: Error) {
+        lastError = "\(action) failed: \(error)"
+    }
+
     func bootstrapOllama() async {
         ollamaWarning = await OllamaProcessManager.ensureReady(logDirectory: env.logDir)
     }
@@ -44,11 +63,21 @@ final class ReceiptStore: ObservableObject {
     // MARK: - Listing / detail (GET /receipts, GET /receipts/{id})
 
     func refreshList() async {
-        guard let rows = try? await db.query("""
+        do {
+            receipts = try await fetchSummaries(deleted: false)
+            deletedReceipts = try await fetchSummaries(deleted: true)
+        } catch {
+            report("Loading receipts", error)
+        }
+    }
+
+    private func fetchSummaries(deleted: Bool) async throws -> [ReceiptSummary] {
+        let rows = try await db.query("""
             SELECT id, store, date, time, total, needs_review, reviewed_at
-            FROM receipts ORDER BY date DESC, id DESC
-            """) else { return }
-        receipts = rows.map { row in
+            FROM receipts WHERE deleted_at IS \(deleted ? "NOT NULL" : "NULL")
+            ORDER BY \(deleted ? "deleted_at DESC" : "date DESC, id DESC")
+            """)
+        return rows.map { row in
             ReceiptSummary(
                 id: row.int(0) ?? 0, store: row.string(1), date: row.string(2), time: row.string(3),
                 total: row.double(4), needsReview: row.bool(5), reviewedAt: row.string(6)
@@ -57,13 +86,18 @@ final class ReceiptStore: ObservableObject {
     }
 
     func loadReceiptDetail(id: Int) async {
-        selectedReceipt = try? await fetchReceiptDetail(id: id)
+        do {
+            selectedReceipt = try await fetchReceiptDetail(id: id)
+        } catch {
+            selectedReceipt = nil
+            report("Loading receipt #\(id)", error)
+        }
     }
 
     private func fetchReceiptDetail(id: Int) async throws -> ReceiptDetail? {
         guard let row = try await db.queryOne("""
             SELECT id, store, date, time, total, computed_sum, needs_review, review_reasons, source_image, reviewed_at
-            FROM receipts WHERE id = ?
+            FROM receipts WHERE id = ? AND deleted_at IS NULL
             """, [.from(id)]) else { return nil }
 
         let itemRows = try await db.query("""
@@ -86,7 +120,7 @@ final class ReceiptStore: ObservableObject {
         return ReceiptDetail(
             id: row.int(0) ?? 0, store: row.string(1), date: row.string(2), time: row.string(3),
             total: row.double(4), computedSum: row.double(5), needsReview: row.bool(6),
-            reviewReasons: decodeStringArray(row.string(7)), sourceImage: row.string(8), reviewedAt: row.string(9),
+            reviewReasons: decodeStringArray(row.string(7)), sourceImage: env.resolveImagePath(row.string(8)), reviewedAt: row.string(9),
             items: items
         )
     }
@@ -100,7 +134,7 @@ final class ReceiptStore: ObservableObject {
     func upload(fileURLs: [URL]) async {
         guard !fileURLs.isEmpty else { return }
         isProcessingUpload = true
-        uploadError = nil
+        uploadResults = []
         defer {
             isProcessingUpload = false
             uploadProgressLabel = nil
@@ -132,7 +166,10 @@ final class ReceiptStore: ObservableObject {
         do {
             try FileManager.default.copyItem(at: fileURL, to: tempPath)
         } catch {
-            uploadError = "Couldn't read \(fileURL.lastPathComponent).\n\(error.localizedDescription)"
+            try? FileManager.default.removeItem(at: tempPath)
+            uploadResults.append(UploadResult(
+                fileName: fileURL.lastPathComponent, outcome: .failure("Couldn't read the file: \(error.localizedDescription)")
+            ))
             return
         }
 
@@ -144,10 +181,18 @@ final class ReceiptStore: ObservableObject {
             await ReceiptPipeline.processReceipt(imagePath: imagePath, db: db, env: env, taxonomy: taxonomy)
         }.value
 
-        guard result.success, let receiptId = result.receiptId else {
-            uploadError = "Couldn't read \(fileURL.lastPathComponent).\n\(result.errorMessage ?? "Unknown error")\nTry a clearer, flatter photo."
+        if let dupId = result.duplicateOf {
+            uploadResults.append(UploadResult(fileName: fileURL.lastPathComponent, outcome: .duplicate(receiptId: dupId)))
             return
         }
+        guard result.success, let receiptId = result.receiptId else {
+            uploadResults.append(UploadResult(
+                fileName: fileURL.lastPathComponent,
+                outcome: .failure("\(result.errorMessage ?? "Unknown error"). Try a clearer, flatter photo.")
+            ))
+            return
+        }
+        uploadResults.append(UploadResult(fileName: fileURL.lastPathComponent, outcome: .success(receiptId: receiptId)))
         await refreshList()
         await loadReceiptDetail(id: receiptId)
     }
@@ -155,74 +200,102 @@ final class ReceiptStore: ObservableObject {
     // MARK: - Mutations
 
     func confirmReceipt(id: Int) async {
-        _ = try? await db.run("UPDATE receipts SET reviewed_at = ? WHERE id = ?", [.text(isoNow()), .from(id)])
+        do {
+            try await db.run("UPDATE receipts SET reviewed_at = ? WHERE id = ?", [.text(isoNow()), .from(id)])
+        } catch { report("Confirming receipt", error) }
         await refreshList()
         await loadReceiptDetail(id: id)
     }
 
     func correctItem(itemDictionaryId: Int, category: String, subcategory: String, itemGroup: String, translationEn: String?, forReceipt receiptId: Int) async {
-        _ = try? await db.run(
-            """
-            UPDATE item_dictionary
-            SET category = ?, subcategory = ?, item_group = ?,
-                translation_en = COALESCE(?, translation_en),
-                is_manual_override = 1, needs_review = 0
-            WHERE id = ?
-            """,
-            [.text(category), .text(subcategory), .text(itemGroup), .from(translationEn), .from(itemDictionaryId)]
-        )
+        do {
+            try await db.run(
+                """
+                UPDATE item_dictionary
+                SET category = ?, subcategory = ?, item_group = ?,
+                    translation_en = COALESCE(?, translation_en),
+                    is_manual_override = 1, needs_review = 0
+                WHERE id = ?
+                """,
+                [.text(category), .text(subcategory), .text(itemGroup), .from(translationEn), .from(itemDictionaryId)]
+            )
+        } catch { report("Saving category", error) }
         await loadReceiptDetail(id: receiptId)
     }
 
     func updateLineItem(lineItemId: Int, quantity: Double, unitPrice: Double, receiptId: Int) async {
         let totalPrice = round2(quantity * unitPrice)
-        _ = try? await db.run(
-            "UPDATE line_items SET quantity = ?, unit_price = ?, total_price = ? WHERE id = ?",
-            [.from(quantity), .from(unitPrice), .from(totalPrice), .from(lineItemId)]
-        )
-        try? await ReceiptPipeline.recomputeReceiptTotals(db: db, receiptId: receiptId)
+        do {
+            try await db.run(
+                "UPDATE line_items SET quantity = ?, unit_price = ?, total_price = ? WHERE id = ?",
+                [.from(quantity), .from(unitPrice), .from(totalPrice), .from(lineItemId)]
+            )
+            try await ReceiptPipeline.recomputeReceiptTotals(db: db, receiptId: receiptId)
+        } catch { report("Updating item", error) }
         await refreshList()
         await loadReceiptDetail(id: receiptId)
     }
 
     func deleteLineItem(lineItemId: Int, receiptId: Int) async {
-        _ = try? await db.run("DELETE FROM line_items WHERE id = ?", [.from(lineItemId)])
-        try? await ReceiptPipeline.recomputeReceiptTotals(db: db, receiptId: receiptId)
+        do {
+            try await db.run("DELETE FROM line_items WHERE id = ?", [.from(lineItemId)])
+            try await ReceiptPipeline.recomputeReceiptTotals(db: db, receiptId: receiptId)
+        } catch { report("Deleting item", error) }
         await refreshList()
         await loadReceiptDetail(id: receiptId)
     }
 
     func addItem(receiptId: Int, name: String, quantity: Double, unitPrice: Double, rawText: String?) async {
-        guard let row = try? await db.queryOne("SELECT store FROM receipts WHERE id = ?", [.from(receiptId)]) else { return }
-        let store = row.string(0)
-        let totalPrice = round2(quantity * unitPrice)
-        guard let entry = try? await ItemCategorizer.getOrCreateItem(
-            db: db, rawName: name, taxonomy: taxonomy, storeName: store, logURL: env.classificationLogURL
-        ) else { return }
-
-        _ = try? await db.run(
-            """
-            INSERT INTO line_items
-            (receipt_id, item_dictionary_id, raw_text, name_de, quantity, unit_price, total_price, price_normalized)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-            """,
-            [.from(receiptId), .from(entry.id), .text(rawText ?? name), .text(name), .from(quantity), .from(unitPrice), .from(totalPrice)]
-        )
-        try? await ReceiptPipeline.recomputeReceiptTotals(db: db, receiptId: receiptId)
+        do {
+            guard let row = try await db.queryOne("SELECT store FROM receipts WHERE id = ?", [.from(receiptId)]) else { return }
+            let store = row.string(0)
+            let totalPrice = round2(quantity * unitPrice)
+            let entry = try await ItemCategorizer.getOrCreateItem(
+                db: db, rawName: name, taxonomy: taxonomy, storeName: store, logURL: env.classificationLogURL
+            )
+            try await db.run(
+                """
+                INSERT INTO line_items
+                (receipt_id, item_dictionary_id, raw_text, name_de, quantity, unit_price, total_price, price_normalized)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                """,
+                [.from(receiptId), .from(entry.id), .text(rawText ?? name), .text(name), .from(quantity), .from(unitPrice), .from(totalPrice)]
+            )
+            try await ReceiptPipeline.recomputeReceiptTotals(db: db, receiptId: receiptId)
+        } catch { report("Adding item", error) }
         await refreshList()
         await loadReceiptDetail(id: receiptId)
     }
 
+    /// Soft delete: hides the receipt everywhere (lists, stats, duplicate checks) but keeps the
+    /// rows and the archived image, so it can be restored from "Recently deleted".
     func deleteReceipt(id: Int) async {
-        var sourceImage: String?
-        if let row = try? await db.queryOne("SELECT source_image FROM receipts WHERE id = ?", [.from(id)]) {
-            sourceImage = row.string(0)
-        }
-        _ = try? await db.run("DELETE FROM line_items WHERE receipt_id = ?", [.from(id)])
-        _ = try? await db.run("DELETE FROM receipts WHERE id = ?", [.from(id)])
-        if let path = sourceImage {
-            try? FileManager.default.removeItem(atPath: path)
-        }
+        do {
+            try await db.run("UPDATE receipts SET deleted_at = ? WHERE id = ?", [.text(isoNow()), .from(id)])
+        } catch { report("Deleting receipt", error) }
+        if selectedReceipt?.id == id { selectedReceipt = nil }
+        await refreshList()
+    }
+
+    func restoreReceipt(id: Int) async {
+        do {
+            try await db.run("UPDATE receipts SET deleted_at = NULL WHERE id = ?", [.from(id)])
+        } catch { report("Restoring receipt", error) }
+        await refreshList()
+    }
+
+    /// Irreversible: removes the rows and the archived image file.
+    func permanentlyDeleteReceipt(id: Int) async {
+        do {
+            let sourceImage = try await db.queryOne("SELECT source_image FROM receipts WHERE id = ?", [.from(id)])?.string(0)
+            try await db.transaction { conn in
+                try conn.run("DELETE FROM line_items WHERE receipt_id = ?", [.from(id)])
+                try conn.run("DELETE FROM receipts WHERE id = ?", [.from(id)])
+            }
+            if let path = env.resolveImagePath(sourceImage) {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        } catch { report("Permanently deleting receipt", error) }
         if selectedReceipt?.id == id { selectedReceipt = nil }
         await refreshList()
     }
@@ -234,7 +307,9 @@ final class ReceiptStore: ObservableObject {
         if let time { fields.append("time = ?"); params.append(.text(time)) }
         guard !fields.isEmpty else { return }
         params.append(.from(id))
-        _ = try? await db.run("UPDATE receipts SET \(fields.joined(separator: ", ")) WHERE id = ?", params)
+        do {
+            try await db.run("UPDATE receipts SET \(fields.joined(separator: ", ")) WHERE id = ?", params)
+        } catch { report("Saving date/time", error) }
         await refreshList()
         await loadReceiptDetail(id: id)
     }
@@ -247,13 +322,17 @@ final class ReceiptStore: ObservableObject {
             FROM line_items li
             JOIN item_dictionary d ON li.item_dictionary_id = d.id
             JOIN receipts r ON li.receipt_id = r.id
-            WHERE 1=1
+            WHERE r.deleted_at IS NULL
             """
         var params: [SQLiteValue] = []
         if let start { query += " AND r.date >= ?"; params.append(.text(start)) }
         if let end { query += " AND r.date <= ?"; params.append(.text(end)) }
 
-        guard let rows = try? await db.query(query, params) else { return StatsSummary(total: 0, categories: []) }
+        let rows: [SQLRow]
+        do { rows = try await db.query(query, params) } catch {
+            report("Loading stats", error)
+            return StatsSummary(total: 0, categories: [])
+        }
 
         struct SubAccum { var total = 0.0; var groups: [String: Double] = [:] }
         struct CatAccum { var total = 0.0; var subcats: [String: SubAccum] = [:] }
@@ -298,14 +377,16 @@ final class ReceiptStore: ObservableObject {
             FROM line_items li
             JOIN item_dictionary d ON li.item_dictionary_id = d.id
             JOIN receipts r ON li.receipt_id = r.id
-            WHERE d.category = ? AND d.subcategory = ? AND d.item_group = ?
+            WHERE r.deleted_at IS NULL AND d.category = ? AND d.subcategory = ? AND d.item_group = ?
             """
         var params: [SQLiteValue] = [.text(category), .text(subcategory), .text(itemGroup)]
         if let start { query += " AND r.date >= ?"; params.append(.text(start)) }
         if let end { query += " AND r.date <= ?"; params.append(.text(end)) }
         query += " ORDER BY r.date DESC"
 
-        guard let rows = try? await db.query(query, params) else {
+        let rows: [SQLRow]
+        do { rows = try await db.query(query, params) } catch {
+            report("Loading item group", error)
             return ItemGroupDetail(category: category, subcategory: subcategory, itemGroup: itemGroup, total: 0, purchases: [])
         }
         let purchases = rows.map { row in

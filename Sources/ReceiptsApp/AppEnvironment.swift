@@ -30,4 +30,18 @@ struct AppEnvironment: Sendable {
             classificationLogURL: base.appendingPathComponent("classification_log.jsonl")
         )
     }
+
+    /// `source_image` is stored relative to the app-support dir (e.g. `receipts_archive/2026/07/x.jpg`); older rows (and receipts whose
+    /// image move failed and still sit in staging) hold absolute paths, which pass through.
+    func resolveImagePath(_ stored: String?) -> String? {
+        guard let stored, !stored.isEmpty else { return nil }
+        if stored.hasPrefix("/") { return stored }
+        return appSupportDir.appendingPathComponent(stored).path
+    }
+
+    /// Inverse of `resolveImagePath` for files inside the app-support dir; anything outside stays absolute.
+    func storedImagePath(for absolutePath: String) -> String {
+        let prefix = appSupportDir.path.hasSuffix("/") ? appSupportDir.path : appSupportDir.path + "/"
+        return absolutePath.hasPrefix(prefix) ? String(absolutePath.dropFirst(prefix.count)) : absolutePath
+    }
 }

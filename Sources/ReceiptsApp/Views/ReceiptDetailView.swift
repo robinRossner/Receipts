@@ -16,6 +16,7 @@ struct ReceiptDetailView: View {
     @State private var addPrice = ""
     @State private var addError: String?
     @State private var addBusy = false
+    @State private var confirmDelete = false
 
     init(detail: ReceiptDetail) {
         self.detail = detail
@@ -64,7 +65,7 @@ struct ReceiptDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
 
                 Button {
-                    Task { await store.deleteReceipt(id: detail.id) }
+                    confirmDelete = true
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11))
@@ -73,6 +74,14 @@ struct ReceiptDetailView: View {
                         .background(Circle().stroke(AppTheme.rule))
                 }
                 .buttonStyle(.plain)
+                .confirmationDialog("Delete this receipt?", isPresented: $confirmDelete) {
+                    Button("Delete", role: .destructive) {
+                        Task { await store.deleteReceipt(id: detail.id) }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("It moves to \"Recently deleted\" and can be restored from there.")
+                }
             }
 
             HStack(spacing: 6) {
