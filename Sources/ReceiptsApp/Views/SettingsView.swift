@@ -31,6 +31,18 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        TabView {
+            general
+                .tabItem { Label("AI Backend", systemImage: "cpu") }
+            DataSettingsView()
+                .tabItem { Label("Data", systemImage: "externaldrive") }
+            DictionaryEditorView()
+                .frame(width: 560, height: 560)
+                .tabItem { Label("Dictionary", systemImage: "books.vertical") }
+        }
+    }
+
+    private var general: some View {
         Form {
             Section("AI backend") {
                 Picker("Backend", selection: $backend) {
@@ -156,5 +168,58 @@ struct SettingsView: View {
             }
             .disabled(isChecking)
         }
+    }
+}
+
+
+/// Backup settings: manual backup, optional weekly automatic backup, last-backup date.
+struct DataSettingsView: View {
+    @EnvironmentObject var store: ReceiptStore
+    @AppStorage(BackupService.Keys.autoEnabled) private var autoEnabled = false
+    @AppStorage(BackupService.Keys.autoFolder) private var autoFolder = ""
+    @State private var backingUp = false
+
+    var body: some View {
+        Form {
+            Section("Backup") {
+                LabeledContent("Last backup") {
+                    Text(store.lastBackupDate.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "Never")
+                }
+                Button(backingUp ? "Backing up…" : "Back Up Data…") {
+                    backingUp = true
+                    Task { await store.backUpNow(); backingUp = false }
+                }
+                .disabled(backingUp)
+                Text("Creates a zip with a consistent copy of the database and all receipt images.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Automatic weekly backup") {
+                Toggle("Back up automatically (when the app starts and a week has passed)", isOn: $autoEnabled)
+                HStack {
+                    Text(autoFolder.isEmpty ? "No folder chosen" : autoFolder)
+                        .lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(autoFolder.isEmpty ? .secondary : .primary)
+                    Spacer()
+                    Button("Choose…") { chooseFolder() }
+                }
+                Text("Keeps the newest \(BackupService.keepCount) automatic backups in that folder.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Restore") {
+                Text("To restore, quit the app, unzip a backup and replace receipts.db and receipts_archive in \(store.env.appSupportDir.path).")
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 520)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url { autoFolder = url.path }
     }
 }

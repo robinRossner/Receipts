@@ -36,6 +36,13 @@
 		0000000000000000001001A3 /* UploadQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0000000000000000001001A2 /* UploadQueueView.swift */; };
 		00000000000000000010004B /* UploadZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004A /* UploadZoneView.swift */; };
 		00000000000000000010F001 /* ReceiptPhotoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010F000 /* ReceiptPhotoView.swift */; };
+		00000000000000000010F206 /* DictionaryEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010F106 /* DictionaryEditorView.swift */; };
+		00000000000000000010F205 /* ExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010F105 /* ExportSheet.swift */; };
+		00000000000000000010F204 /* OverviewCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010F104 /* OverviewCharts.swift */; };
+		00000000000000000010F203 /* DataExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010F103 /* DataExporter.swift */; };
+		00000000000000000010F202 /* BackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010F102 /* BackupService.swift */; };
+		00000000000000000010F201 /* ReceiptStore+Data.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010F101 /* ReceiptStore+Data.swift */; };
+		00000000000000000010F200 /* ReceiptStore+Stats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010F100 /* ReceiptStore+Stats.swift */; };
 		000000000000000000100009 /* category_taxonomy.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100008 /* category_taxonomy.json */; };
 		00000000000000000010004D /* LLMProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004C /* LLMProvider.swift */; };
 		00000000000000000010004F /* OllamaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004E /* OllamaProvider.swift */; };
@@ -77,6 +84,13 @@
 		0000000000000000001001A2 /* UploadQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueView.swift; sourceTree = "<group>"; };
 		00000000000000000010004A /* UploadZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadZoneView.swift; sourceTree = "<group>"; };
 		00000000000000000010F000 /* ReceiptPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptPhotoView.swift; sourceTree = "<group>"; };
+		00000000000000000010F106 /* DictionaryEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryEditorView.swift; sourceTree = "<group>"; };
+		00000000000000000010F105 /* ExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSheet.swift; sourceTree = "<group>"; };
+		00000000000000000010F104 /* OverviewCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewCharts.swift; sourceTree = "<group>"; };
+		00000000000000000010F103 /* DataExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataExporter.swift; sourceTree = "<group>"; };
+		00000000000000000010F102 /* BackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupService.swift; sourceTree = "<group>"; };
+		00000000000000000010F101 /* ReceiptStore+Data.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReceiptStore+Data.swift"; sourceTree = "<group>"; };
+		00000000000000000010F100 /* ReceiptStore+Stats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReceiptStore+Stats.swift"; sourceTree = "<group>"; };
 		000000000000000000100008 /* category_taxonomy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = category_taxonomy.json; sourceTree = "<group>"; };
 		000000000000000000100006 /* Receipts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Receipts.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		00000000000000000010004C /* LLMProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMProvider.swift; sourceTree = "<group>"; };
@@ -121,6 +135,10 @@
 			isa = PBXGroup;
 			children = (
 				00000000000000000010001C /* Database.swift */,
+				00000000000000000010F100 /* ReceiptStore+Stats.swift */,
+				00000000000000000010F101 /* ReceiptStore+Data.swift */,
+				00000000000000000010F102 /* BackupService.swift */,
+				00000000000000000010F103 /* DataExporter.swift */,
 				0000000000000000001001A0 /* UploadQueue.swift */,
 				00000000000000000010001E /* ReceiptStore.swift */,
 			);
@@ -181,6 +199,9 @@
 				000000000000000000100048 /* ReviewView.swift */,
 				00000000000000000010004A /* UploadZoneView.swift */,
 				00000000000000000010F000 /* ReceiptPhotoView.swift */,
+				00000000000000000010F106 /* DictionaryEditorView.swift */,
+				00000000000000000010F105 /* ExportSheet.swift */,
+				00000000000000000010F104 /* OverviewCharts.swift */,
 				0000000000000000001001A2 /* UploadQueueView.swift */,
 				000000000000000000100054 /* SettingsView.swift */,
 			);
@@ -293,6 +314,13 @@
 				000000000000000000100049 /* ReviewView.swift in Sources */,
 				00000000000000000010004B /* UploadZoneView.swift in Sources */,
 				00000000000000000010F001 /* ReceiptPhotoView.swift in Sources */,
+				00000000000000000010F206 /* DictionaryEditorView.swift in Sources */,
+				00000000000000000010F205 /* ExportSheet.swift in Sources */,
+				00000000000000000010F204 /* OverviewCharts.swift in Sources */,
+				00000000000000000010F203 /* DataExporter.swift in Sources */,
+				00000000000000000010F202 /* BackupService.swift in Sources */,
+				00000000000000000010F201 /* ReceiptStore+Data.swift in Sources */,
+				00000000000000000010F200 /* ReceiptStore+Stats.swift in Sources */,
 				0000000000000000001001A3 /* UploadQueueView.swift in Sources */,
 				00000000000000000010004D /* LLMProvider.swift in Sources */,
 				00000000000000000010004F /* OllamaProvider.swift in Sources */,

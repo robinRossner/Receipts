@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 
 @main
@@ -28,6 +29,7 @@ struct ReceiptsApp: App {
                 .task {
                     await store.checkProviderReadiness()
                     await store.refreshList()
+                    await store.runAutoBackupIfDue()
                 }
         }
         .windowResizability(.contentSize)
@@ -35,6 +37,9 @@ struct ReceiptsApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Import Receipts…") { store.isImporterPresented = true }
                     .keyboardShortcut("o", modifiers: .command)
+                Button("Export…") { store.exportSheetPresented = true }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                Button("Back Up Data…") { Task { await store.backUpNow() } }
             }
 
             CommandGroup(after: .textEditing) {
@@ -57,7 +62,14 @@ struct ReceiptsApp: App {
                 Button("Confirm") { Task { await store.confirmSelectedReceipt() } }
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(store.page != .review || store.selectedReceipt == nil || store.selectedReceipt?.reviewedAt != nil)
-                Button("Delete…") { store.deleteConfirmationPresented = true }
+                Button("Delete…") {
+                    // While editing text, ⌘⌫ keeps its text meaning (delete to line start) instead of deleting the receipt.
+                    if NSApp.keyWindow?.firstResponder is NSText {
+                        NSApp.sendAction(#selector(NSResponder.deleteToBeginningOfLine(_:)), to: nil, from: nil)
+                    } else {
+                        store.deleteConfirmationPresented = true
+                    }
+                }
                     .keyboardShortcut(.delete, modifiers: .command)
                     .disabled(store.page != .review || store.selectedReceipt == nil)
                 Divider()

@@ -50,3 +50,25 @@ struct ItemGroupDetail {
     var total: Double
     var purchases: [PurchaseRow]
 }
+
+/// One bar segment of the spending-over-time chart.
+struct MonthCategoryTotal: Identifiable {
+    var id: String { month + "|" + category }
+    var month: String      // "yyyy-MM"
+    var category: String
+    var total: Double
+}
+
+struct StoreTotal: Identifiable {
+    var id: String { store }
+    var store: String
+    var total: Double
+}
+
+/// One purchase of an item, for the price-history chart.
+struct PricePoint: Identifiable {
+    let id = UUID()
+    var date: Date
+    var item: String
+    var unitPrice: Double
+}

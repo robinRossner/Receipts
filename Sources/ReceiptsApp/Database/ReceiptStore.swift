@@ -46,6 +46,13 @@ final class ReceiptStore: ObservableObject {
     @Published var isCheckingProvider = false
     /// Receipts currently being re-extracted / re-categorized.
     @Published var busyReceiptIDs: Set<Int> = []
+    /// Overview's current range (set by OverviewView) so File > Export… can offer "current range".
+    @Published var overviewRange: (start: String?, end: String?, label: String) = (nil, nil, "All time")
+    @Published var exportSheetPresented = false
+    @Published var lastBackupDate: Date? = BackupService.lastBackupDate
+    /// Stats query results, dropped whenever data changes (see invalidateStatsCache).
+    var statsCache: [String: Any] = [:]
+    func invalidateStatsCache() { statsCache.removeAll() }
 
     // Search & filters for the receipt list.
     enum DateRange: String, CaseIterable, Identifiable {
@@ -74,7 +81,7 @@ final class ReceiptStore: ObservableObject {
         self.services = ProviderFactory.makeServices(settings: settings, env: env)
     }
 
-    private func report(_ action: String, _ error: Error) {
+    func report(_ action: String, _ error: Error) {
         lastError = "\(action) failed: \(error)"
     }
 
@@ -116,6 +123,7 @@ final class ReceiptStore: ObservableObject {
     // MARK: - Listing / detail (GET /receipts, GET /receipts/{id})
 
     func refreshList() async {
+        invalidateStatsCache()
         do {
             receipts = try await fetchSummaries(deleted: false)
             deletedReceipts = try await fetchSummaries(deleted: true)
@@ -437,6 +445,7 @@ final class ReceiptStore: ObservableObject {
         } else if result.success, let receiptId = result.receiptId {
             setState(.done(receiptId: receiptId), for: id)
             // Lightweight refresh so the receipt shows up now; the full refresh runs once at the end.
+            invalidateStatsCache()
             if let rows = try? await fetchSummaries(deleted: false) { receipts = rows }
             if uploadQueue.count == 1 { await loadReceiptDetail(id: receiptId) }
         } else {
@@ -564,6 +573,7 @@ final class ReceiptStore: ObservableObject {
                 [.text(category), .text(subcategory), .text(itemGroup), .from(translationEn), .from(itemDictionaryId)]
             )
         } catch { report("Saving category", error) }
+        invalidateStatsCache()
         await loadReceiptDetail(id: receiptId)
     }
 
@@ -674,60 +684,6 @@ final class ReceiptStore: ObservableObject {
     }
 
     // MARK: - Stats (GET /stats/summary, GET /stats/item-group)
-
-    func statsSummary(start: String?, end: String?) async -> StatsSummary {
-        var query = """
-            SELECT d.category, d.subcategory, d.item_group, li.total_price
-            FROM line_items li
-            JOIN item_dictionary d ON li.item_dictionary_id = d.id
-            JOIN receipts r ON li.receipt_id = r.id
-            WHERE r.deleted_at IS NULL
-            """
-        var params: [SQLiteValue] = []
-        if let start { query += " AND r.date >= ?"; params.append(.text(start)) }
-        if let end { query += " AND r.date <= ?"; params.append(.text(end)) }
-
-        let rows: [SQLRow]
-        do { rows = try await db.query(query, params) } catch {
-            report("Loading stats", error)
-            return StatsSummary(total: 0, categories: [])
-        }
-
-        struct SubAccum { var total = 0.0; var groups: [String: Double] = [:] }
-        struct CatAccum { var total = 0.0; var subcats: [String: SubAccum] = [:] }
-
-        var tree: [String: CatAccum] = [:]
-        var grandTotal = 0.0
-        for row in rows {
-            let category = row.string(0) ?? ""
-            let subcategory = row.string(1) ?? ""
-            let itemGroup = row.string(2) ?? ""
-            let price = row.double(3) ?? 0
-            grandTotal += price
-
-            var cat = tree[category] ?? CatAccum()
-            cat.total += price
-            var sub = cat.subcats[subcategory] ?? SubAccum()
-            sub.total += price
-            sub.groups[itemGroup, default: 0] += price
-            cat.subcats[subcategory] = sub
-            tree[category] = cat
-        }
-
-        var categories: [CategoryStat] = tree.map { catName, catAccum in
-            var subcats: [SubcategoryStat] = catAccum.subcats.map { subName, subAccum in
-                let groups = subAccum.groups
-                    .map { ItemGroupStat(itemGroup: $0.key, total: round2($0.value)) }
-                    .sorted { $0.total > $1.total }
-                return SubcategoryStat(subcategory: subName, total: round2(subAccum.total), itemGroups: groups)
-            }
-            subcats.sort { $0.total > $1.total }
-            return CategoryStat(category: catName, total: round2(catAccum.total), subcategories: subcats)
-        }
-        categories.sort { $0.total > $1.total }
-
-        return StatsSummary(total: round2(grandTotal), categories: categories)
-    }
 
     func statsItemGroup(category: String, subcategory: String, itemGroup: String, start: String?, end: String?) async -> ItemGroupDetail {
         var query = """

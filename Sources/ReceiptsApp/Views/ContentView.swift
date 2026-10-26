@@ -31,6 +31,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(AppTheme.desk)
+        .sheet(isPresented: $store.exportSheetPresented) { ExportSheet() }
         .onChange(of: store.isImporterPresented) {
             if store.isImporterPresented { store.page = .review }
         }

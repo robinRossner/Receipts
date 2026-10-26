@@ -13,6 +13,12 @@ enum AppTheme {
     static let stampGreen = Color(hex: 0x3F6B4F)
     static let rule = Color(hex: 0xC9C2AC)
 
+    /// Chart series colors: five categories plus a neutral for "Other". Muted to sit on the paper tone.
+    static let chartPalette: [Color] = [
+        Color(hex: 0x3F6B4F), Color(hex: 0xB33A3A), Color(hex: 0xC28B2C), Color(hex: 0x3F6A8A), Color(hex: 0x7A4E7E),
+    ]
+    static let chartOther = Color(hex: 0x9A9484)
+
     /// Special Elite substitute - a typewriter-style serif for store names / headings.
     static func display(_ size: CGFloat) -> Font {
         .custom("American Typewriter", size: size)
