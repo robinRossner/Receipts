@@ -165,18 +165,19 @@ enum ReceiptPipeline {
         return (extracted, categorized)
     }
 
-    /// Same store + date + total (and time, when both have one) as another live receipt:
-    /// still import it, but flag it. `excluding` is the receipt being re-extracted.
+    /// Same store + date + total as another live receipt: still import it, but flag it.
+    /// Time is ignored on purpose - the model misreads digits (16:40 vs 18:40), and this only
+    /// flags, never drops. `excluding` is the receipt being re-extracted.
     static func flagPossibleDuplicate(_ extracted: inout ExtractedReceipt, db: Database, excluding: Int?) async throws {
         guard let date = extracted.date, let total = extracted.total,
               let dup = try await db.queryOne(
                 """
                 SELECT id FROM receipts
                 WHERE deleted_at IS NULL AND store = ? AND date = ? AND ABS(total - ?) < 0.005
-                  AND (time IS NULL OR ? IS NULL OR time = ?) AND id != ?
+                  AND id != ?
                 ORDER BY id LIMIT 1
                 """,
-                [.from(extracted.store), .text(date), .from(total), .from(extracted.time), .from(extracted.time), .from(excluding ?? -1)]
+                [.from(extracted.store), .text(date), .from(total), .from(excluding ?? -1)]
               ), let dupId = dup.int(0) else { return }
         extracted.reviewReasons.append("Possible duplicate of receipt #\(dupId)")
         extracted.needsReview = true
