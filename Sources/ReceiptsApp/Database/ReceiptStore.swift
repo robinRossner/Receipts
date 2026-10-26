@@ -35,6 +35,29 @@ final class ReceiptStore: ObservableObject {
     /// From the selected AI backend's readiness() check; shown in the top bar.
     @Published var providerWarning: String?
     @Published var highlightRequest: HighlightRequest?
+    /// Top-level tab; lives here so menu commands (⌘1 / ⌘2) can switch it.
+    @Published var page: AppPage = .review
+    /// Id-based selection, set the moment a row is picked (before the detail finishes loading).
+    @Published var selectedReceiptID: Int?
+    /// Bumped by Edit > Find (⌘F); the search field focuses itself when it changes.
+    @Published var searchFocusToken = UUID()
+    /// Presents the delete confirmation for the selected receipt (button and ⌘⌫ share it).
+    @Published var deleteConfirmationPresented = false
+    @Published var isCheckingProvider = false
+    /// Receipts currently being re-extracted / re-categorized.
+    @Published var busyReceiptIDs: Set<Int> = []
+
+    // Search & filters for the receipt list.
+    enum DateRange: String, CaseIterable, Identifiable {
+        case all = "All time", thisMonth = "This month", last3Months = "Last 3 months", thisYear = "This year"
+        var id: String { rawValue }
+    }
+    @Published var searchText = "" { didSet { scheduleSearch() } }
+    @Published var dateRange: DateRange = .all
+    @Published var storeFilter: String?
+    /// Receipt ids matching `searchText` (store, item names de/en, amount); nil = no search active.
+    @Published private(set) var searchMatches: Set<Int>?
+    private var searchTask: Task<Void, Never>?
 
     /// Mirrors goToReceiptItem() in dashboard.html: jump to the Review tab, load the receipt,
     /// and let the view scroll to + briefly highlight the matching item group.
@@ -62,6 +85,8 @@ final class ReceiptStore: ObservableObject {
 
     /// Asks the selected backend whether it's usable (Ollama: starts `ollama serve`, checks models).
     func checkProviderReadiness() async {
+        isCheckingProvider = true
+        defer { isCheckingProvider = false }
         let health = services.health
         providerWarning = await health.readiness().warningMessage
     }
@@ -97,6 +122,84 @@ final class ReceiptStore: ObservableObject {
         } catch {
             report("Loading receipts", error)
         }
+        await runSearch()
+    }
+
+    // MARK: - Search / filter / selection order
+
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.runSearch()
+        }
+    }
+
+    private func runSearch() async {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { searchMatches = nil; return }
+        let like = "%\(q.replacingOccurrences(of: "%", with: "").replacingOccurrences(of: "_", with: ""))%"
+        // Amounts: accept "12,50" and "€12.50"; compare against the total as text with 2 decimals.
+        let amount = "%\(q.replacingOccurrences(of: ",", with: ".").replacingOccurrences(of: "€", with: "").trimmingCharacters(in: .whitespaces))%"
+        do {
+            let rows = try await db.query("""
+                SELECT DISTINCT r.id FROM receipts r
+                LEFT JOIN line_items li ON li.receipt_id = r.id
+                LEFT JOIN item_dictionary d ON d.id = li.item_dictionary_id
+                WHERE r.deleted_at IS NULL AND (r.store LIKE ? OR li.name_de LIKE ? OR d.translation_en LIKE ?
+                    OR printf('%.2f', r.total) LIKE ?)
+                """, [.text(like), .text(like), .text(like), .text(amount)])
+            guard !Task.isCancelled else { return }
+            searchMatches = Set(rows.compactMap { $0.int(0) })
+        } catch { report("Searching receipts", error) }
+    }
+
+    /// Stores to offer in the filter menu and as suggestions: canonical chains + stores already in use.
+    var knownStores: [String] {
+        Set(ReceiptPipeline.canonicalStoreNames).union(receipts.compactMap(\.store).filter { !$0.isEmpty }).sorted()
+    }
+    var storesInUse: [String] { Set(receipts.compactMap(\.store).filter { !$0.isEmpty }).sorted() }
+
+    private var dateCutoff: String? {
+        let cal = Calendar(identifier: .gregorian)
+        let now = Date()
+        let start: Date?
+        switch dateRange {
+        case .all: start = nil
+        case .thisMonth: start = cal.dateInterval(of: .month, for: now)?.start
+        case .last3Months: start = cal.date(byAdding: .month, value: -3, to: now)
+        case .thisYear: start = cal.dateInterval(of: .year, for: now)?.start
+        }
+        guard let start else { return nil }
+        return ReceiptDateFormat.dateString(from: start)
+    }
+
+    /// `receipts` (already SQL-ordered date DESC) narrowed by search, date range and store.
+    var filteredReceipts: [ReceiptSummary] {
+        let cutoff = dateCutoff
+        return receipts.filter { r in
+            if let matches = searchMatches, !matches.contains(r.id) { return false }
+            if let storeFilter, r.store != storeFilter { return false }
+            if let cutoff, (r.date ?? "") < cutoff { return false }
+            return true
+        }
+    }
+    var isFiltering: Bool { searchMatches != nil || dateRange != .all || storeFilter != nil }
+
+    /// Order the list shows rows in (needs review first), used for ↑/↓ navigation.
+    var displayOrder: [ReceiptSummary] {
+        let f = filteredReceipts
+        return f.filter { $0.reviewedAt == nil } + f.filter { $0.reviewedAt != nil }
+    }
+
+    func selectAdjacentReceipt(offset: Int) async {
+        let order = displayOrder
+        guard !order.isEmpty else { return }
+        let idx = order.firstIndex { $0.id == selectedReceiptID }
+        let target = idx.map { min(max($0 + offset, 0), order.count - 1) } ?? (offset > 0 ? 0 : order.count - 1)
+        guard order[target].id != selectedReceiptID else { return }
+        await loadReceiptDetail(id: order[target].id)
     }
 
     private func fetchSummaries(deleted: Bool) async throws -> [ReceiptSummary] {
@@ -114,8 +217,13 @@ final class ReceiptStore: ObservableObject {
     }
 
     func loadReceiptDetail(id: Int) async {
+        selectedReceiptID = id
         do {
-            selectedReceipt = try await fetchReceiptDetail(id: id)
+            let detail = try await fetchReceiptDetail(id: id)
+            // A newer selection may have happened while this was loading.
+            guard selectedReceiptID == id else { return }
+            selectedReceipt = detail
+            if detail == nil { selectedReceiptID = nil }
         } catch {
             selectedReceipt = nil
             report("Loading receipt #\(id)", error)
@@ -349,10 +457,96 @@ final class ReceiptStore: ObservableObject {
 
     // MARK: - Mutations
 
+    /// Marks the receipt reviewed, then moves on to the next unreviewed one (the one after it in
+    /// the list if any, else the first); stays put when nothing is left to review.
     func confirmReceipt(id: Int) async {
+        let before = receipts.firstIndex { $0.id == id } ?? 0
         do {
             try await db.run("UPDATE receipts SET reviewed_at = ? WHERE id = ?", [.text(isoNow()), .from(id)])
         } catch { report("Confirming receipt", error) }
+        await refreshList()
+        let pending = receipts.enumerated().filter { $0.element.reviewedAt == nil && $0.element.id != id }
+        if let next = pending.first(where: { $0.offset > before }) ?? pending.first {
+            await loadReceiptDetail(id: next.element.id)
+        } else {
+            await loadReceiptDetail(id: id)
+        }
+    }
+
+    func confirmSelectedReceipt() async {
+        guard let detail = selectedReceipt, detail.reviewedAt == nil else { return }
+        await confirmReceipt(id: detail.id)
+    }
+
+    /// Unreviewed receipts without any review reason (what "Confirm all without flags" affects).
+    var unflaggedUnreviewedCount: Int { receipts.filter { $0.reviewedAt == nil && !$0.needsReview }.count }
+
+    func confirmAllWithoutFlags() async {
+        do {
+            try await db.run(
+                """
+                UPDATE receipts SET reviewed_at = ?
+                WHERE reviewed_at IS NULL AND deleted_at IS NULL AND needs_review = 0
+                  AND (review_reasons IS NULL OR review_reasons IN ('', '[]'))
+                """,
+                [.text(isoNow())]
+            )
+        } catch { report("Confirming receipts", error) }
+        await refreshList()
+        if let id = selectedReceiptID { await loadReceiptDetail(id: id) }
+    }
+
+    /// How many line items (and receipts) share this dictionary entry, i.e. what a category
+    /// correction on it will change.
+    func dictionaryUsage(itemDictionaryId: Int) async -> (items: Int, receipts: Int) {
+        do {
+            let row = try await db.queryOne("""
+                SELECT COUNT(*), COUNT(DISTINCT li.receipt_id) FROM line_items li
+                JOIN receipts r ON r.id = li.receipt_id
+                WHERE li.item_dictionary_id = ? AND r.deleted_at IS NULL
+                """, [.from(itemDictionaryId)])
+            return (row?.int(0) ?? 0, row?.int(1) ?? 0)
+        } catch {
+            report("Counting affected items", error)
+            return (0, 0)
+        }
+    }
+
+    // MARK: - Re-run extraction / re-categorize
+
+    /// Re-processes the archived image with the current provider and replaces header fields and
+    /// line items in one transaction (id kept, reviewed_at cleared).
+    func rerunExtraction(id: Int) async {
+        guard !busyReceiptIDs.contains(id) else { return }
+        busyReceiptIDs.insert(id)
+        defer { busyReceiptIDs.remove(id) }
+        let db = db, env = env, taxonomy = taxonomy, services = services
+        let result = await Task.detached(priority: .userInitiated) {
+            await ReceiptPipeline.reprocessReceipt(receiptId: id, db: db, env: env, taxonomy: taxonomy, services: services)
+        }.value
+        if !result.success && !result.cancelled {
+            lastError = "Re-running extraction failed: \(result.errorMessage ?? "unknown error")"
+        }
+        await refreshList()
+        if selectedReceiptID == id { await loadReceiptDetail(id: id) }
+    }
+
+    /// Re-runs classification for this receipt's items whose dictionary entry isn't a manual override.
+    func recategorizeItems(id: Int) async {
+        guard !busyReceiptIDs.contains(id) else { return }
+        busyReceiptIDs.insert(id)
+        defer { busyReceiptIDs.remove(id) }
+        do {
+            let rows = try await db.query("SELECT DISTINCT item_dictionary_id FROM line_items WHERE receipt_id = ?", [.from(id)])
+            let storeName = selectedReceipt?.id == id ? selectedReceipt?.store : nil
+            let db = db, taxonomy = taxonomy, services = services, log = env.classificationLogURL
+            let ids = rows.compactMap { $0.int(0) }
+            _ = try await Task.detached(priority: .userInitiated) {
+                try await ItemCategorizer.reclassifyEntries(
+                    db: db, dictionaryIds: ids, taxonomy: taxonomy, storeName: storeName, logURL: log, provider: services.classification
+                )
+            }.value
+        } catch { report("Re-categorizing items", error) }
         await refreshList()
         await loadReceiptDetail(id: id)
     }
@@ -424,7 +618,7 @@ final class ReceiptStore: ObservableObject {
         do {
             try await db.run("UPDATE receipts SET deleted_at = ? WHERE id = ?", [.text(isoNow()), .from(id)])
         } catch { report("Deleting receipt", error) }
-        if selectedReceipt?.id == id { selectedReceipt = nil }
+        if selectedReceiptID == id { selectedReceipt = nil; selectedReceiptID = nil }
         await refreshList()
     }
 
@@ -447,20 +641,34 @@ final class ReceiptStore: ObservableObject {
                 try? FileManager.default.removeItem(atPath: path)
             }
         } catch { report("Permanently deleting receipt", error) }
-        if selectedReceipt?.id == id { selectedReceipt = nil }
+        if selectedReceiptID == id { selectedReceipt = nil; selectedReceiptID = nil }
         await refreshList()
     }
 
-    func updateReceiptDateTime(id: Int, date: String?, time: String?) async {
-        var fields: [String] = []
-        var params: [SQLiteValue] = []
-        if let date { fields.append("date = ?"); params.append(.text(date)) }
-        if let time { fields.append("time = ?"); params.append(.text(time)) }
-        guard !fields.isEmpty else { return }
-        params.append(.from(id))
+    /// `date`/`time` are stored as "yyyy-MM-dd" / "HH:mm"; a nil time clears it.
+    func updateReceiptDateTime(id: Int, date: String, time: String?) async {
         do {
-            try await db.run("UPDATE receipts SET \(fields.joined(separator: ", ")) WHERE id = ?", params)
+            try await db.run("UPDATE receipts SET date = ?, time = ? WHERE id = ?", [.text(date), .from(time), .from(id)])
         } catch { report("Saving date/time", error) }
+        await refreshList()
+        await loadReceiptDetail(id: id)
+    }
+
+    func updateReceiptStore(id: Int, store name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await db.run("UPDATE receipts SET store = ? WHERE id = ?", [.text(ReceiptPipeline.canonicalizeStore(trimmed)), .from(id)])
+        } catch { report("Saving store", error) }
+        await refreshList()
+        await loadReceiptDetail(id: id)
+    }
+
+    /// Saves the printed total, then re-derives the sum-mismatch review reason (other reasons stay).
+    func updateReceiptTotal(id: Int, total: Double?) async {
+        do {
+            try await db.run("UPDATE receipts SET total = ? WHERE id = ?", [.from(total.map(round2)), .from(id)])
+            try await ReceiptPipeline.recomputeReceiptTotals(db: db, receiptId: id)
+        } catch { report("Saving total", error) }
         await refreshList()
         await loadReceiptDetail(id: id)
     }

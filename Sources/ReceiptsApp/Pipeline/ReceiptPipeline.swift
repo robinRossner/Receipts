@@ -32,7 +32,7 @@ enum ProcessStage: Sendable {
 enum ReceiptPipeline {
     // ---- Store name canonicalization, copied verbatim from receipt_pipeline.py ----
 
-    private static let storeNameMap: [String: String] = [
+    static let storeNameMap: [String: String] = [
         "edeka": "Edeka",
         "aldi sud": "Aldi Süd",
         "aldi süd": "Aldi Süd",
@@ -46,6 +46,9 @@ enum ReceiptPipeline {
         "rossmann": "Rossmann",
         "kaufland": "Kaufland",
     ]
+
+    /// The chain names the extraction can produce (for store-name suggestions in the UI).
+    static var canonicalStoreNames: [String] { Array(Set(storeNameMap.values)).sorted() }
 
     static func canonicalizeStore(_ raw: String?) -> String {
         guard let raw else { return "Unknown" }
@@ -108,9 +111,10 @@ enum ReceiptPipeline {
 
         let total = receiptRow.double(0)
         var reasons = decodeStringArray(receiptRow.string(1)).filter { !$0.contains("sum to") }
+        if total != nil { reasons.removeAll { $0.hasPrefix("No total found") } }
         if let total {
             let diff = round2(abs(computedSum - total))
-            if diff > 0.02 {
+            if diff > ReceiptExtractor.sumMismatchTolerance {
                 reasons.append("Item prices sum to \(round2(computedSum)), but printed total is \(total) (difference: \(diff)). Check raw_text per item.")
             }
         }
@@ -119,6 +123,120 @@ enum ReceiptPipeline {
             "UPDATE receipts SET computed_sum = ?, review_reasons = ?, needs_review = ? WHERE id = ?",
             [.from(round2(computedSum)), .text(encodeStringArray(reasons)), .from(!reasons.isEmpty), .from(receiptId)]
         )
+    }
+
+    typealias CategorizedItem = (item: ExtractedItem, name: String, dictId: Int)
+
+    /// Scan -> extract -> canonicalize store -> categorize every item. Shared by the first import
+    /// (processReceipt) and "Re-run extraction". Writes nothing except item_dictionary upserts.
+    static func extractAndCategorize(imagePath: String, db: Database, env: AppEnvironment, taxonomy: Taxonomy, services: PipelineServices,
+                                     progress: (@Sendable (ProcessStage) -> Void)? = nil) async throws -> (ExtractedReceipt, [CategorizedItem]) {
+        progress?(.scanning)
+        let warped = try DocumentScanner.scan(imagePath: imagePath)
+        try Task.checkCancellation()
+        progress?(.extracting)
+        var extracted = try await ReceiptExtractor.extractAndValidate(image: warped, provider: services.extraction)
+        extracted.store = canonicalizeStore(extracted.store)
+
+        let debugPath = env.debugDir.appendingPathComponent(
+            "\(URL(fileURLWithPath: imagePath).deletingPathExtension().lastPathComponent).json"
+        )
+        if services.debugDump, let data = extracted.toJSONData() {
+            try? data.write(to: debugPath)
+        }
+
+        // Categorize everything before writing anything: one dictionary load and one batched
+        // LLM call for the whole receipt. item_dictionary upserts happen here, outside the
+        // receipt transaction - it's a shared cache, so entries created for a receipt that
+        // later fails are harmless.
+        try Task.checkCancellation()
+        progress?(.categorizing)
+        let itemNames = extracted.items.map { $0.name ?? $0.rawText ?? "" }
+        let (dictEntries, classificationProviders) = try await ItemCategorizer.resolveItems(
+            db: db, rawNames: itemNames, taxonomy: taxonomy, storeName: extracted.store,
+            logURL: env.classificationLogURL, provider: services.classification
+        )
+        let categorized: [CategorizedItem] = zip(extracted.items, zip(itemNames, dictEntries))
+            .map { ($0, $1.0, $1.1.id) }
+
+        if services.debugDump, let data = extracted.toJSONData(extra: ["classification_providers": classificationProviders]) {
+            try? data.write(to: debugPath)
+        }
+        return (extracted, categorized)
+    }
+
+    /// Same store + date + total (and time, when both have one) as another live receipt:
+    /// still import it, but flag it. `excluding` is the receipt being re-extracted.
+    static func flagPossibleDuplicate(_ extracted: inout ExtractedReceipt, db: Database, excluding: Int?) async throws {
+        guard let date = extracted.date, let total = extracted.total,
+              let dup = try await db.queryOne(
+                """
+                SELECT id FROM receipts
+                WHERE deleted_at IS NULL AND store = ? AND date = ? AND ABS(total - ?) < 0.005
+                  AND (time IS NULL OR ? IS NULL OR time = ?) AND id != ?
+                ORDER BY id LIMIT 1
+                """,
+                [.from(extracted.store), .text(date), .from(total), .from(extracted.time), .from(extracted.time), .from(excluding ?? -1)]
+              ), let dupId = dup.int(0) else { return }
+        extracted.reviewReasons.append("Possible duplicate of receipt #\(dupId)")
+        extracted.needsReview = true
+    }
+
+    static func insertLineItems(_ conn: SQLConnection, receiptId: Int64, _ categorized: [CategorizedItem]) throws {
+        for entry in categorized {
+            try conn.run(
+                """
+                INSERT INTO line_items
+                (receipt_id, item_dictionary_id, raw_text, name_de, quantity, unit_price, total_price, price_normalized)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [.integer(receiptId), .from(entry.dictId), .from(entry.item.rawText), .text(entry.name),
+                 .from(entry.item.quantity ?? 1.0), .from(entry.item.unitPrice ?? 0.0), .from(entry.item.totalPrice ?? 0.0),
+                 .from(entry.item.priceNormalized)]
+            )
+        }
+    }
+
+    /// Re-runs extraction on the receipt's archived image with the current providers and replaces
+    /// its header fields and line items in ONE transaction. Keeps the id, image, image_hash and
+    /// created_at; reviewed_at is cleared. On any failure nothing is changed.
+    static func reprocessReceipt(receiptId: Int, db: Database, env: AppEnvironment, taxonomy: Taxonomy, services: PipelineServices,
+                                 progress: (@Sendable (ProcessStage) -> Void)? = nil) async -> ProcessResult {
+        do {
+            guard let row = try await db.queryOne("SELECT source_image FROM receipts WHERE id = ? AND deleted_at IS NULL", [.from(receiptId)]),
+                  let imagePath = env.resolveImagePath(row.string(0)) else {
+                return ProcessResult(success: false, receiptId: receiptId, errorMessage: "This receipt has no archived image.")
+            }
+            guard FileManager.default.fileExists(atPath: imagePath) else {
+                return ProcessResult(success: false, receiptId: receiptId, errorMessage: "The archived image file is missing.")
+            }
+            var (extracted, categorized) = try await extractAndCategorize(
+                imagePath: imagePath, db: db, env: env, taxonomy: taxonomy, services: services, progress: progress
+            )
+            try await flagPossibleDuplicate(&extracted, db: db, excluding: receiptId)
+            try Task.checkCancellation()
+            progress?(.saving)
+            try await db.transaction { conn in
+                try conn.run(
+                    """
+                    UPDATE receipts SET store = ?, date = ?, time = ?, total = ?, computed_sum = ?,
+                        needs_review = ?, review_reasons = ?, reviewed_at = NULL
+                    WHERE id = ?
+                    """,
+                    [.from(extracted.store), .from(extracted.date), .from(extracted.time), .from(extracted.total),
+                     .from(extracted.computedSum), .from(extracted.needsReview),
+                     .text(encodeStringArray(extracted.reviewReasons)), .from(receiptId)]
+                )
+                try conn.run("DELETE FROM line_items WHERE receipt_id = ?", [.from(receiptId)])
+                try insertLineItems(conn, receiptId: Int64(receiptId), categorized)
+            }
+            return ProcessResult(success: true, receiptId: receiptId, errorMessage: nil)
+        } catch {
+            if error is CancellationError || Task.isCancelled {
+                return ProcessResult(success: false, receiptId: receiptId, errorMessage: "Cancelled", cancelled: true)
+            }
+            return ProcessResult(success: false, receiptId: receiptId, errorMessage: error.localizedDescription)
+        }
     }
 
     /// SHA-256 of the original file bytes, hex-encoded.
@@ -146,53 +264,11 @@ enum ReceiptPipeline {
                 return ProcessResult(success: false, receiptId: nil, errorMessage: "Already imported (receipt #\(dupId))", duplicateOf: dupId)
             }
 
-            progress?(.scanning)
-            let warped = try DocumentScanner.scan(imagePath: imagePath)
-            try Task.checkCancellation()
-            progress?(.extracting)
-            var extracted = try await ReceiptExtractor.extractAndValidate(image: warped, provider: services.extraction)
-            extracted.store = canonicalizeStore(extracted.store)
-
-            let debugPath = env.debugDir.appendingPathComponent(
-                "\(URL(fileURLWithPath: imagePath).deletingPathExtension().lastPathComponent).json"
+            let (extractedResult, categorized) = try await extractAndCategorize(
+                imagePath: imagePath, db: db, env: env, taxonomy: taxonomy, services: services, progress: progress
             )
-            if services.debugDump, let data = extracted.toJSONData() {
-                try? data.write(to: debugPath)
-            }
-
-            // Categorize everything before writing anything: one dictionary load and one batched
-            // LLM call for the whole receipt. item_dictionary upserts happen here, outside the
-            // receipt transaction - it's a shared cache, so entries created for a receipt that
-            // later fails are harmless.
-            try Task.checkCancellation()
-            progress?(.categorizing)
-            let itemNames = extracted.items.map { $0.name ?? $0.rawText ?? "" }
-            let (dictEntries, classificationProviders) = try await ItemCategorizer.resolveItems(
-                db: db, rawNames: itemNames, taxonomy: taxonomy, storeName: extracted.store,
-                logURL: env.classificationLogURL, provider: services.classification
-            )
-            let categorized: [(item: ExtractedItem, name: String, dictId: Int)] = zip(extracted.items, zip(itemNames, dictEntries))
-                .map { ($0, $1.0, $1.1.id) }
-
-            if services.debugDump, let data = extracted.toJSONData(extra: ["classification_providers": classificationProviders]) {
-                try? data.write(to: debugPath)
-            }
-
-            // Same store + date + total (and time, when both have one) as a live receipt:
-            // still import it, but flag it.
-            if let date = extracted.date, let total = extracted.total,
-               let dup = try await db.queryOne(
-                """
-                SELECT id FROM receipts
-                WHERE deleted_at IS NULL AND store = ? AND date = ? AND ABS(total - ?) < 0.005
-                  AND (time IS NULL OR ? IS NULL OR time = ?)
-                ORDER BY id LIMIT 1
-                """,
-                [.from(extracted.store), .text(date), .from(total), .from(extracted.time), .from(extracted.time)]
-               ), let dupId = dup.int(0) {
-                extracted.reviewReasons.append("Possible duplicate of receipt #\(dupId)")
-                extracted.needsReview = true
-            }
+            var extracted = extractedResult
+            try await flagPossibleDuplicate(&extracted, db: db, excluding: nil)
 
             // Last cancellation point: once the transaction starts, the receipt is written in full.
             try Task.checkCancellation()
@@ -209,18 +285,7 @@ enum ReceiptPipeline {
                      .from(extracted.total), .from(extracted.computedSum), .from(extracted.needsReview),
                      .text(encodeStringArray(extracted.reviewReasons)), .text(imagePath), .text(now), .text(imageHash)]
                 )
-                for entry in categorized {
-                    try conn.run(
-                        """
-                        INSERT INTO line_items
-                        (receipt_id, item_dictionary_id, raw_text, name_de, quantity, unit_price, total_price, price_normalized)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        [.integer(receiptId), .from(entry.dictId), .from(entry.item.rawText), .text(entry.name),
-                         .from(entry.item.quantity ?? 1.0), .from(entry.item.unitPrice ?? 0.0), .from(entry.item.totalPrice ?? 0.0),
-                         .from(entry.item.priceNormalized)]
-                    )
-                }
+                try insertLineItems(conn, receiptId: receiptId, categorized)
                 return Int(receiptId)
             }
 

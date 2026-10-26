@@ -326,6 +326,54 @@ enum ItemCategorizer {
         return entry
     }
 
+    /// "Re-categorize items": re-runs classification (keyword rules first, then one batched LLM
+    /// call) for the dictionary entries behind these line items, skipping manual overrides.
+    /// Updates the shared item_dictionary rows, so other receipts using them change too.
+    /// Returns how many entries were updated.
+    static func reclassifyEntries(
+        db: Database, dictionaryIds: [Int], taxonomy: Taxonomy, storeName: String?, logURL: URL, provider: any ItemClassificationProvider
+    ) async throws -> Int {
+        guard !dictionaryIds.isEmpty else { return 0 }
+        let marks = dictionaryIds.map { _ in "?" }.joined(separator: ",")
+        let rows = try await db.query(
+            "SELECT * FROM item_dictionary WHERE is_manual_override = 0 AND id IN (\(marks))",
+            dictionaryIds.map { .from($0) }
+        )
+        let entries = rows.map(rowToEntry)
+        guard !entries.isEmpty else { return 0 }
+
+        let llmEntries = entries.filter { taxonomy.keywordPath(forNormalizedName: $0.canonicalName) == nil }
+        var llmResults: [Classification] = []
+        if !llmEntries.isEmpty {
+            llmResults = try await classifyWithLLM(
+                itemNames: llmEntries.map { $0.displayNameDe ?? $0.canonicalName }, taxonomy: taxonomy,
+                storeName: storeName, logURL: logURL, provider: provider
+            ).results
+        }
+        var next = llmResults.makeIterator()
+        var updated = 0
+        for entry in entries {
+            let c: Classification
+            if let kw = taxonomy.keywordPath(forNormalizedName: entry.canonicalName) {
+                c = Classification(translationEn: "", category: kw.category, subcategory: kw.subcategory, itemGroup: kw.itemGroup, needsReview: false)
+            } else if let n = next.next() {
+                c = n
+            } else { continue }
+            try await db.run(
+                """
+                UPDATE item_dictionary
+                SET category = ?, subcategory = ?, item_group = ?, needs_review = ?,
+                    translation_en = COALESCE(?, translation_en)
+                WHERE id = ? AND is_manual_override = 0
+                """,
+                [.text(c.category), .text(c.subcategory), .text(c.itemGroup), .from(c.needsReview),
+                 c.translationEn.isEmpty ? .null : .text(c.translationEn), .from(entry.id)]
+            )
+            updated += 1
+        }
+        return updated
+    }
+
     /// For every raw name, in order: normalize -> exact cache match -> fuzzy cache match, against
     /// item_dictionary loaded ONCE; whatever is left is classified in one batched LLM call and
     /// cached. Names repeated within the batch (or fuzzy-close to an earlier new one) share one

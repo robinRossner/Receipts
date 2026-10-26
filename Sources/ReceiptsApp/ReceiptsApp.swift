@@ -36,6 +36,36 @@ struct ReceiptsApp: App {
                 Button("Import Receipts…") { store.isImporterPresented = true }
                     .keyboardShortcut("o", modifiers: .command)
             }
+
+            CommandGroup(after: .textEditing) {
+                Button("Find Receipts") {
+                    store.page = .review
+                    store.searchFocusToken = UUID()
+                }
+                .keyboardShortcut("f", modifiers: .command)
+            }
+
+            CommandGroup(before: .toolbar) {
+                Button("Review") { store.page = .review }
+                    .keyboardShortcut("1", modifiers: .command)
+                Button("Overview") { store.page = .overview }
+                    .keyboardShortcut("2", modifiers: .command)
+                Divider()
+            }
+
+            CommandMenu("Receipt") {
+                Button("Confirm") { Task { await store.confirmSelectedReceipt() } }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(store.page != .review || store.selectedReceipt == nil || store.selectedReceipt?.reviewedAt != nil)
+                Button("Delete…") { store.deleteConfirmationPresented = true }
+                    .keyboardShortcut(.delete, modifiers: .command)
+                    .disabled(store.page != .review || store.selectedReceipt == nil)
+                Divider()
+                Button("Previous Receipt") { Task { await store.selectAdjacentReceipt(offset: -1) } }
+                    .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                Button("Next Receipt") { Task { await store.selectAdjacentReceipt(offset: 1) } }
+                    .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            }
         }
 
         // macOS Settings window (⌘,).

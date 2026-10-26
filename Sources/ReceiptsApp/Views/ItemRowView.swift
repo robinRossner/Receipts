@@ -16,6 +16,7 @@ struct ItemRowView: View {
     @State private var subcategory: String
     @State private var itemGroup: String
     @State private var saveState: SaveState = .idle
+    @State private var usage: (items: Int, receipts: Int)?
 
     init(receiptId: Int, item: LineItemDetail) {
         self.receiptId = receiptId
@@ -31,6 +32,17 @@ struct ItemRowView: View {
     private var previewTotal: String {
         guard let q = Double(qtyText), let p = Double(priceText) else { return "—" }
         return fmtMoney(round2(q * p))
+    }
+
+    private var categoryChanged: Bool {
+        category != item.category || subcategory != item.subcategory || itemGroup != item.itemGroup
+    }
+
+    private var usageNote: String {
+        guard let usage else { return "This changes the shared dictionary entry for this item." }
+        let items = usage.items == 1 ? "1 line item" : "\(usage.items) line items"
+        let receipts = usage.receipts == 1 ? "1 receipt" : "\(usage.receipts) receipts"
+        return "Saving updates the dictionary entry, so it applies to \(items) across \(receipts)."
     }
 
     private var saveLabel: String {
@@ -97,6 +109,16 @@ struct ItemRowView: View {
             }
             .font(AppTheme.body(12))
 
+            if categoryChanged {
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "info.circle")
+                    Text(usageNote)
+                }
+                .font(AppTheme.body(11))
+                .foregroundColor(AppTheme.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack(spacing: 8) {
                 // .fixedSize() guarantees these never get compressed by the layout system -
                 // any squeezing lands on the pickers above (which have a minWidth to shrink
@@ -117,6 +139,10 @@ struct ItemRowView: View {
                 Spacer()
             }
             .font(AppTheme.body(12))
+        }
+        .task(id: item.itemDictionaryId) {
+            let u = await store.dictionaryUsage(itemDictionaryId: item.itemDictionaryId)
+            usage = (u.items, u.receipts)
         }
         .padding(item.needsReview ? 10 : 0)
         .background(item.needsReview ? AppTheme.penRedBg : Color.clear)

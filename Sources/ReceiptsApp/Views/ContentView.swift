@@ -10,7 +10,6 @@ enum AppPage {
 /// which this single-process app doesn't have (⌘Q is the native equivalent).
 struct ContentView: View {
     @EnvironmentObject var store: ReceiptStore
-    @State private var page: AppPage = .review
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,20 +22,20 @@ struct ContentView: View {
             // divs - so Overview's expand/collapse state survives switching tabs.
             ZStack {
                 ReviewView()
-                    .opacity(page == .review ? 1 : 0)
-                    .allowsHitTesting(page == .review)
-                OverviewView(isActive: page == .overview)
-                    .opacity(page == .overview ? 1 : 0)
-                    .allowsHitTesting(page == .overview)
+                    .opacity(store.page == .review ? 1 : 0)
+                    .allowsHitTesting(store.page == .review)
+                OverviewView(isActive: store.page == .overview)
+                    .opacity(store.page == .overview ? 1 : 0)
+                    .allowsHitTesting(store.page == .overview)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(AppTheme.desk)
         .onChange(of: store.isImporterPresented) {
-            if store.isImporterPresented { page = .review }
+            if store.isImporterPresented { store.page = .review }
         }
         .onChange(of: store.highlightRequest) {
-            if store.highlightRequest != nil { page = .review }
+            if store.highlightRequest != nil { store.page = .review }
         }
     }
 
@@ -46,7 +45,8 @@ struct ContentView: View {
                 .font(AppTheme.display(20))
                 .foregroundColor(AppTheme.ink)
             Spacer()
-            if let warning = store.providerWarning {
+            // With no receipts yet, ReviewView shows the warning as a full empty state instead.
+            if let warning = store.providerWarning, (!store.receipts.isEmpty || store.page == .overview) {
                 Text(warning)
                     .font(AppTheme.body(11))
                     .foregroundColor(AppTheme.penRed)
@@ -86,9 +86,9 @@ struct ContentView: View {
     }
 
     private func tabButton(_ title: String, _ target: AppPage) -> some View {
-        let isActive = page == target
+        let isActive = store.page == target
         return Button {
-            page = target
+            store.page = target
         } label: {
             Text(title)
                 .font(AppTheme.body(13, weight: .medium))
