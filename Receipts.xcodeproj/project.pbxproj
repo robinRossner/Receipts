@@ -1,0 +1,379 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		000000000000000000100019 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100018 /* AppEnvironment.swift */; };
+		00000000000000000010001B /* ReceiptsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010001A /* ReceiptsApp.swift */; };
+		00000000000000000010001D /* Database.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010001C /* Database.swift */; };
+		00000000000000000010001F /* ReceiptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010001E /* ReceiptStore.swift */; };
+		000000000000000000100021 /* LineItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100020 /* LineItem.swift */; };
+		000000000000000000100023 /* Receipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100022 /* Receipt.swift */; };
+		000000000000000000100025 /* Stats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100024 /* Stats.swift */; };
+		000000000000000000100027 /* Taxonomy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100026 /* Taxonomy.swift */; };
+		000000000000000000100029 /* DocumentScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100028 /* DocumentScanner.swift */; };
+		00000000000000000010002B /* ExtractionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010002A /* ExtractionModels.swift */; };
+		00000000000000000010002D /* FuzzyMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010002C /* FuzzyMatch.swift */; };
+		00000000000000000010002F /* ItemCategorizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010002E /* ItemCategorizer.swift */; };
+		000000000000000000100031 /* JSONUtil.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100030 /* JSONUtil.swift */; };
+		000000000000000000100033 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100032 /* OllamaClient.swift */; };
+		000000000000000000100035 /* OllamaProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100034 /* OllamaProcessManager.swift */; };
+		000000000000000000100037 /* ReceiptExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100036 /* ReceiptExtractor.swift */; };
+		000000000000000000100039 /* ReceiptPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100038 /* ReceiptPipeline.swift */; };
+		00000000000000000010003B /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010003A /* AppTheme.swift */; };
+		00000000000000000010003D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010003C /* ContentView.swift */; };
+		00000000000000000010003F /* Formatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010003E /* Formatting.swift */; };
+		000000000000000000100041 /* ItemRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100040 /* ItemRowView.swift */; };
+		000000000000000000100043 /* OverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100042 /* OverviewView.swift */; };
+		000000000000000000100045 /* ReceiptDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100044 /* ReceiptDetailView.swift */; };
+		000000000000000000100047 /* ReceiptListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100046 /* ReceiptListView.swift */; };
+		000000000000000000100049 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100048 /* ReviewView.swift */; };
+		00000000000000000010004B /* UploadZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004A /* UploadZoneView.swift */; };
+		000000000000000000100009 /* category_taxonomy.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100008 /* category_taxonomy.json */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		000000000000000000100018 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
+		00000000000000000010001A /* ReceiptsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptsApp.swift; sourceTree = "<group>"; };
+		00000000000000000010001C /* Database.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Database.swift; sourceTree = "<group>"; };
+		00000000000000000010001E /* ReceiptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptStore.swift; sourceTree = "<group>"; };
+		000000000000000000100020 /* LineItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineItem.swift; sourceTree = "<group>"; };
+		000000000000000000100022 /* Receipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Receipt.swift; sourceTree = "<group>"; };
+		000000000000000000100024 /* Stats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stats.swift; sourceTree = "<group>"; };
+		000000000000000000100026 /* Taxonomy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Taxonomy.swift; sourceTree = "<group>"; };
+		000000000000000000100028 /* DocumentScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScanner.swift; sourceTree = "<group>"; };
+		00000000000000000010002A /* ExtractionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractionModels.swift; sourceTree = "<group>"; };
+		00000000000000000010002C /* FuzzyMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FuzzyMatch.swift; sourceTree = "<group>"; };
+		00000000000000000010002E /* ItemCategorizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemCategorizer.swift; sourceTree = "<group>"; };
+		000000000000000000100030 /* JSONUtil.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONUtil.swift; sourceTree = "<group>"; };
+		000000000000000000100032 /* OllamaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaClient.swift; sourceTree = "<group>"; };
+		000000000000000000100034 /* OllamaProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaProcessManager.swift; sourceTree = "<group>"; };
+		000000000000000000100036 /* ReceiptExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptExtractor.swift; sourceTree = "<group>"; };
+		000000000000000000100038 /* ReceiptPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptPipeline.swift; sourceTree = "<group>"; };
+		00000000000000000010003A /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		00000000000000000010003C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		00000000000000000010003E /* Formatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatting.swift; sourceTree = "<group>"; };
+		000000000000000000100040 /* ItemRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemRowView.swift; sourceTree = "<group>"; };
+		000000000000000000100042 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewView.swift; sourceTree = "<group>"; };
+		000000000000000000100044 /* ReceiptDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptDetailView.swift; sourceTree = "<group>"; };
+		000000000000000000100046 /* ReceiptListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptListView.swift; sourceTree = "<group>"; };
+		000000000000000000100048 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
+		00000000000000000010004A /* UploadZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadZoneView.swift; sourceTree = "<group>"; };
+		000000000000000000100008 /* category_taxonomy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = category_taxonomy.json; sourceTree = "<group>"; };
+		000000000000000000100006 /* Receipts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Receipts.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		00000000000000000010000B /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		000000000000000000100003 = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000100004 /* ReceiptsApp */,
+				000000000000000000100005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		000000000000000000100004 /* ReceiptsApp */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000100018 /* AppEnvironment.swift */,
+				00000000000000000010001A /* ReceiptsApp.swift */,
+				000000000000000000100013 /* Database */,
+				000000000000000000100014 /* Models */,
+				000000000000000000100015 /* Pipeline */,
+				000000000000000000100016 /* Theme */,
+				000000000000000000100017 /* Views */,
+				000000000000000000100007 /* Resources */,
+			);
+			path = "Sources/ReceiptsApp";
+			sourceTree = "<group>";
+		};
+		000000000000000000100013 /* Database */ = {
+			isa = PBXGroup;
+			children = (
+				00000000000000000010001C /* Database.swift */,
+				00000000000000000010001E /* ReceiptStore.swift */,
+			);
+			path = Database;
+			sourceTree = "<group>";
+		};
+		000000000000000000100014 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000100020 /* LineItem.swift */,
+				000000000000000000100022 /* Receipt.swift */,
+				000000000000000000100024 /* Stats.swift */,
+				000000000000000000100026 /* Taxonomy.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		000000000000000000100015 /* Pipeline */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000100028 /* DocumentScanner.swift */,
+				00000000000000000010002A /* ExtractionModels.swift */,
+				00000000000000000010002C /* FuzzyMatch.swift */,
+				00000000000000000010002E /* ItemCategorizer.swift */,
+				000000000000000000100030 /* JSONUtil.swift */,
+				000000000000000000100032 /* OllamaClient.swift */,
+				000000000000000000100034 /* OllamaProcessManager.swift */,
+				000000000000000000100036 /* ReceiptExtractor.swift */,
+				000000000000000000100038 /* ReceiptPipeline.swift */,
+			);
+			path = Pipeline;
+			sourceTree = "<group>";
+		};
+		000000000000000000100016 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				00000000000000000010003A /* AppTheme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		000000000000000000100017 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				00000000000000000010003C /* ContentView.swift */,
+				00000000000000000010003E /* Formatting.swift */,
+				000000000000000000100040 /* ItemRowView.swift */,
+				000000000000000000100042 /* OverviewView.swift */,
+				000000000000000000100044 /* ReceiptDetailView.swift */,
+				000000000000000000100046 /* ReceiptListView.swift */,
+				000000000000000000100048 /* ReviewView.swift */,
+				00000000000000000010004A /* UploadZoneView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		000000000000000000100007 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000100008 /* category_taxonomy.json */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		000000000000000000100005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000100006 /* Receipts.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		000000000000000000100002 /* ReceiptsApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000100012 /* Build configuration list for PBXNativeTarget "ReceiptsApp" */;
+			buildPhases = (
+				00000000000000000010000A /* Sources */,
+				00000000000000000010000B /* Frameworks */,
+				00000000000000000010000C /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = ReceiptsApp;
+			productName = ReceiptsApp;
+			productReference = 000000000000000000100006 /* Receipts.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		000000000000000000100001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1620;
+				LastUpgradeCheck = 1620;
+			};
+			buildConfigurationList = 000000000000000000100011 /* Build configuration list for PBXProject "Receipts" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 000000000000000000100003;
+			productRefGroup = 000000000000000000100005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				000000000000000000100002 /* ReceiptsApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		00000000000000000010000C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000100009 /* category_taxonomy.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		00000000000000000010000A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000100019 /* AppEnvironment.swift in Sources */,
+				00000000000000000010001B /* ReceiptsApp.swift in Sources */,
+				00000000000000000010001D /* Database.swift in Sources */,
+				00000000000000000010001F /* ReceiptStore.swift in Sources */,
+				000000000000000000100021 /* LineItem.swift in Sources */,
+				000000000000000000100023 /* Receipt.swift in Sources */,
+				000000000000000000100025 /* Stats.swift in Sources */,
+				000000000000000000100027 /* Taxonomy.swift in Sources */,
+				000000000000000000100029 /* DocumentScanner.swift in Sources */,
+				00000000000000000010002B /* ExtractionModels.swift in Sources */,
+				00000000000000000010002D /* FuzzyMatch.swift in Sources */,
+				00000000000000000010002F /* ItemCategorizer.swift in Sources */,
+				000000000000000000100031 /* JSONUtil.swift in Sources */,
+				000000000000000000100033 /* OllamaClient.swift in Sources */,
+				000000000000000000100035 /* OllamaProcessManager.swift in Sources */,
+				000000000000000000100037 /* ReceiptExtractor.swift in Sources */,
+				000000000000000000100039 /* ReceiptPipeline.swift in Sources */,
+				00000000000000000010003B /* AppTheme.swift in Sources */,
+				00000000000000000010003D /* ContentView.swift in Sources */,
+				00000000000000000010003F /* Formatting.swift in Sources */,
+				000000000000000000100041 /* ItemRowView.swift in Sources */,
+				000000000000000000100043 /* OverviewView.swift in Sources */,
+				000000000000000000100045 /* ReceiptDetailView.swift in Sources */,
+				000000000000000000100047 /* ReceiptListView.swift in Sources */,
+				000000000000000000100049 /* ReviewView.swift in Sources */,
+				00000000000000000010004B /* UploadZoneView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		00000000000000000010000D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		00000000000000000010000E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		00000000000000000010000F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.robin.receiptsapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		000000000000000000100010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.robin.receiptsapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		000000000000000000100011 /* Build configuration list for PBXProject "Receipts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				00000000000000000010000D /* Debug */,
+				00000000000000000010000E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000100012 /* Build configuration list for PBXNativeTarget "ReceiptsApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				00000000000000000010000F /* Debug */,
+				000000000000000000100010 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = 000000000000000000100001 /* Project object */;
+}

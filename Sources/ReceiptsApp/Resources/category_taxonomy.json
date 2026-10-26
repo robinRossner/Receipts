@@ -1,0 +1,44 @@
+{
+  "categories": {
+    "Food": {
+      "Vegetables": ["Tomatoes", "Leafy Greens", "Root Vegetables", "Peppers", "Onions & Garlic", "Mushrooms", "Cucumbers & Squash", "Other Vegetables"],
+      "Fruits": ["Berries", "Citrus", "Bananas", "Apples & Pears", "Other Fruits"],
+      "Dairy & Eggs": ["Milk", "Cheese", "Yogurt", "Eggs", "Butter & Cream"],
+      "Meat & Fish": ["Poultry", "Beef & Pork", "Fish & Seafood", "Cold Cuts"],
+      "Bakery": ["Bread", "Pastries"],
+      "Pantry": ["Pasta & Rice", "Canned Goods", "Sauces & Condiments", "Spices", "Baking", "Spreads", "Oils & Vinegar"],
+      "Beverages": ["Water", "Soft Drinks", "Juice", "Coffee & Tea", "Beer", "Wine & Spirits"],
+      "Snacks & Sweets": ["Chips & Snacks", "Chocolate & Candy", "Cookies", "Nuts & Dried Fruit"],
+      "Frozen & Ready Meals": ["Frozen Pizza", "Ready Meals", "Frozen Vegetables", "Ice Cream"]
+    },
+    "Household": {
+      "Cleaning": ["Laundry", "Surface Cleaners", "Dishwashing"],
+      "Paper Goods": ["Toilet Paper", "Kitchen Roll", "Tissues"]
+    },
+    "Personal Care": {
+      "Hygiene": ["Shower & Bath", "Oral Care", "Deodorant"],
+      "Cosmetics": ["Skincare", "Haircare", "Makeup"]
+    },
+    "Other": {
+      "Pharmacy": [],
+      "Pet Supplies": [],
+      "Deposits & Refunds": ["Pfand", "Returns & Refunds"],
+      "Miscellaneous": []
+    }
+  },
+  "notes": {
+    "Food > Vegetables > Tomatoes": "Includes cherry, roma, beefsteak, and all tomato varieties - group here by grocery-store convention even though botanically a fruit.",
+    "Food > Vegetables > Cucumbers & Squash": "Includes cucumbers, zucchini, pumpkin - also botanically fruits, group here anyway.",
+    "Food > Dairy & Eggs > Yogurt": "Includes yogurt, skyr, quark, and similar cultured dairy products.",
+    "Food > Pantry > Spreads": "Includes jam, honey, Nutella, peanut butter, chocolate spread, marmalade - anything spread on bread.",
+    "Food > Pantry > Pasta & Rice": "Includes fresh/refrigerated pasta too (Spätzle, Tortellini, etc.), not just dry pasta.",
+    "Food > Snacks & Sweets > Nuts & Dried Fruit": "Includes nuts, seeds (chia, sunflower, pumpkin), and dried fruit.",
+    "Food > Frozen & Ready Meals > Frozen Pizza": "Includes all frozen or chilled ready-to-bake pizza - not Bakery, even though it has bread-like dough.",
+    "Food > Beverages > Beer": "Includes all beer, including alcohol-free (alkoholfrei) beer - group by product type, not alcohol content.",
+    "Other > Deposits & Refunds > Pfand": "The deposit CHARGED when buying a bottle/container - item name is usually just 'Pfand', always a positive amount. Never merge into the drink it belongs to.",
+    "Other > Deposits & Refunds > Returns & Refunds": "Empty bottles/containers being RETURNED for a refund - item name is usually 'Leergut', always negative or a refund. This is the opposite direction of Pfand, not the same thing.",
+    "Personal Care > Cosmetics > Skincare": "Includes body lotion, face cream, and moisturizers - even ones used in the bathroom/shower.",
+    "Personal Care > Hygiene > Shower & Bath": "Only soap, shower gel, and bath/wash products. Lotions and creams go under Cosmetics > Skincare instead.",
+    "Other > Miscellaneous > General": "Use only when genuinely unsure - flagged for manual review, not a dumping ground."
+  }
+}
