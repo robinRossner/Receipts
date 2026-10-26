@@ -1,6 +1,6 @@
 import Foundation
 
-/// Shared helpers used by both ReceiptExtractor and ItemCategorizer when talking to Ollama.
+/// Shared helpers used by both ReceiptExtractor and ItemCategorizer to parse LLM output (provider-agnostic).
 enum JSONUtil {
     /// Scrapes everything between the first '{' and last '}' - mirrors parse_json_response()
     /// in both scan_and_parse_receipt.py and categorize_item.py (LLMs sometimes wrap JSON in

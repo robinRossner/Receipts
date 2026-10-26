@@ -51,6 +51,8 @@ struct ExtractedReceipt {
     var computedSum: Double = 0
     var needsReview: Bool = false
     var reviewReasons: [String] = []
+    /// Which provider/model answered the extraction call (LLMResponse.providerId).
+    var providerId: String?
 
     init(dict: [String: Any]) {
         store = JSONCoerce.string(dict["store"])
@@ -63,7 +65,8 @@ struct ExtractedReceipt {
     }
 
     /// For the debug_output/ dump - mirrors the DEBUG_DUMP JSON written by process_receipt().
-    func toJSONData() -> Data? {
+    /// `extra` adds pipeline metadata (e.g. which provider classified each item).
+    func toJSONData(extra: [String: Any] = [:]) -> Data? {
         let itemDicts: [[String: Any]] = items.map { item in
             var d: [String: Any] = [:]
             d["raw_text"] = item.rawText ?? NSNull()
@@ -74,7 +77,8 @@ struct ExtractedReceipt {
             d["price_normalized"] = item.priceNormalized
             return d
         }
-        let dict: [String: Any] = [
+        var dict: [String: Any] = [
+            "extraction_provider": providerId ?? NSNull(),
             "store": store ?? NSNull(),
             "date": date ?? NSNull(),
             "time": time ?? NSNull(),
@@ -85,6 +89,7 @@ struct ExtractedReceipt {
             "needs_review": needsReview,
             "review_reasons": reviewReasons,
         ]
+        dict.merge(extra) { _, new in new }
         guard JSONSerialization.isValidJSONObject(dict) else { return nil }
         return try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted])
     }

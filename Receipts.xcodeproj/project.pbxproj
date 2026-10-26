@@ -34,6 +34,11 @@
 		000000000000000000100049 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100048 /* ReviewView.swift */; };
 		00000000000000000010004B /* UploadZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004A /* UploadZoneView.swift */; };
 		000000000000000000100009 /* category_taxonomy.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100008 /* category_taxonomy.json */; };
+		00000000000000000010004D /* LLMProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004C /* LLMProvider.swift */; };
+		00000000000000000010004F /* OllamaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004E /* OllamaProvider.swift */; };
+		000000000000000000100051 /* LLMSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100050 /* LLMSettings.swift */; };
+		000000000000000000100053 /* ProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100052 /* ProviderFactory.swift */; };
+		000000000000000000100055 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100054 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -65,6 +70,11 @@
 		00000000000000000010004A /* UploadZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadZoneView.swift; sourceTree = "<group>"; };
 		000000000000000000100008 /* category_taxonomy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = category_taxonomy.json; sourceTree = "<group>"; };
 		000000000000000000100006 /* Receipts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Receipts.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		00000000000000000010004C /* LLMProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMProvider.swift; sourceTree = "<group>"; };
+		00000000000000000010004E /* OllamaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaProvider.swift; sourceTree = "<group>"; };
+		000000000000000000100050 /* LLMSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMSettings.swift; sourceTree = "<group>"; };
+		000000000000000000100052 /* ProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderFactory.swift; sourceTree = "<group>"; };
+		000000000000000000100054 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +137,10 @@
 				000000000000000000100034 /* OllamaProcessManager.swift */,
 				000000000000000000100036 /* ReceiptExtractor.swift */,
 				000000000000000000100038 /* ReceiptPipeline.swift */,
+				00000000000000000010004C /* LLMProvider.swift */,
+				00000000000000000010004E /* OllamaProvider.swift */,
+				000000000000000000100050 /* LLMSettings.swift */,
+				000000000000000000100052 /* ProviderFactory.swift */,
 			);
 			path = Pipeline;
 			sourceTree = "<group>";
@@ -150,6 +164,7 @@
 				000000000000000000100046 /* ReceiptListView.swift */,
 				000000000000000000100048 /* ReviewView.swift */,
 				00000000000000000010004A /* UploadZoneView.swift */,
+				000000000000000000100054 /* SettingsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -258,6 +273,11 @@
 				000000000000000000100047 /* ReceiptListView.swift in Sources */,
 				000000000000000000100049 /* ReviewView.swift in Sources */,
 				00000000000000000010004B /* UploadZoneView.swift in Sources */,
+				00000000000000000010004D /* LLMProvider.swift in Sources */,
+				00000000000000000010004F /* OllamaProvider.swift in Sources */,
+				000000000000000000100051 /* LLMSettings.swift in Sources */,
+				000000000000000000100053 /* ProviderFactory.swift in Sources */,
+				000000000000000000100055 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

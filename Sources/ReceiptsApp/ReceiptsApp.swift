@@ -18,10 +18,16 @@ struct ReceiptsApp: App {
                 .environmentObject(store)
                 .frame(minWidth: 900, minHeight: 600)
                 .task {
-                    await store.bootstrapOllama()
+                    await store.checkProviderReadiness()
                     await store.refreshList()
                 }
         }
         .windowResizability(.contentSize)
+
+        // macOS Settings window (⌘,).
+        Settings {
+            SettingsView()
+                .environmentObject(store)
+        }
     }
 }

@@ -3,10 +3,12 @@ import Foundation
 
 enum ExtractionError: Error, LocalizedError {
     case invalidJSON(String)
+    case imageEncodingFailed
 
     var errorDescription: String? {
         switch self {
         case .invalidJSON(let detail): return "LLM did not return valid JSON: \(detail)"
+        case .imageEncodingFailed: return "Could not encode image to JPEG"
         }
     }
 }
@@ -15,9 +17,8 @@ func round2(_ v: Double) -> Double { (v * 100).rounded() / 100 }
 
 /// Ports scan_and_parse_receipt.py: send the straightened receipt image to the vision LLM,
 /// parse its JSON, and run the same validation checks (Pfand normalization, sum mismatch,
-/// per-line math, quantities).
+/// per-line math, quantities). The model call itself goes through a ReceiptExtractionProvider.
 enum ReceiptExtractor {
-    static let ollamaModel = "qwen2.5vl:7b"
     static let sumMismatchTolerance = 0.02
     static let knownPfandValues: [Double] = [0.08, 0.15, 0.25, 1.50]
     static let pfandAutocorrectThreshold = 0.10
@@ -99,18 +100,44 @@ enum ReceiptExtractor {
     Respond with ONLY the JSON object, no explanation, no markdown code fences.
     """#
 
-    static func callVisionModel(image: CIImage) async throws -> String {
-        guard let jpeg = DocumentScanner.jpegData(from: image) else {
-            throw OllamaError.requestFailed("Could not encode image to JPEG")
+    static let maxOutputTokens = 2048
+
+    /// The JSON structure promptTemplate asks for, as a schema for providers with structured
+    /// output. Nullable where the prompt allows null/unclear values; parsing stays lenient anyway.
+    static let outputSchema: JSONSchema = {
+        func nullable(_ type: String, _ description: String) -> [String: Any] {
+            ["type": [type, "null"], "description": description]
         }
-        return try await OllamaClient.chat(
-            model: ollamaModel,
-            prompt: promptTemplate,
-            imageData: jpeg,
-            temperature: 0.1,
-            numCtx: 8192,
-            numPredict: 2048
-        )
+        let item: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "raw_text": ["type": "string", "description": "The original OCR line(s) for this item, uncorrected"],
+                "name": ["type": "string", "description": "Best-guess cleaned-up German item name"],
+                "quantity": ["type": "number", "description": "Units purchased; 1 unless an explicit multiplier or weight is printed"],
+                "unit_price": ["type": "number", "description": "Price per single unit; negative for returns/discounts"],
+                "total_price": ["type": "number", "description": "quantity x unit_price"],
+            ] as [String: Any],
+            "required": ["raw_text", "name", "quantity", "unit_price", "total_price"],
+            "additionalProperties": false,
+        ]
+        let root: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "store": nullable("string", "Store name"),
+                "date": nullable("string", "Purchase date, YYYY-MM-DD"),
+                "time": nullable("string", "Purchase time, HH:MM, or null if unclear"),
+                "items": ["type": "array", "items": item] as [String: Any],
+                "total": nullable("number", "Printed SUMME total, always positive"),
+                "printed_item_count": nullable("integer", "Article count printed on the receipt, or null if not visible"),
+            ] as [String: Any],
+            "required": ["store", "date", "time", "items", "total", "printed_item_count"],
+            "additionalProperties": false,
+        ]
+        return JSONSchema(name: "receipt_extraction", root: root)
+    }()
+
+    static func callVisionModel(jpeg: Data, provider: any ReceiptExtractionProvider) async throws -> LLMResponse {
+        try await provider.extractReceipt(jpeg: jpeg, prompt: promptTemplate, schema: outputSchema, maxOutputTokens: maxOutputTokens)
     }
 
     static func parseJSONResponse(_ raw: String) throws -> ExtractedReceipt {
@@ -122,15 +149,20 @@ enum ReceiptExtractor {
 
     /// Calls the vision model, retrying once on invalid JSON - same policy as
     /// process_receipt() in receipt_pipeline.py.
-    static func extractAndValidate(image: CIImage) async throws -> ExtractedReceipt {
-        let first = try await callVisionModel(image: image)
-        if let parsed = try? parseJSONResponse(first) {
+    static func extractAndValidate(image: CIImage, provider: any ReceiptExtractionProvider) async throws -> ExtractedReceipt {
+        guard let jpeg = DocumentScanner.jpegData(from: image) else {
+            throw ExtractionError.imageEncodingFailed
+        }
+        let first = try await callVisionModel(jpeg: jpeg, provider: provider)
+        if var parsed = try? parseJSONResponse(first.text) {
+            parsed.providerId = first.providerId
             return validateReceipt(parsed)
         }
-        let second = try await callVisionModel(image: image)
-        guard let parsed = try? parseJSONResponse(second) else {
+        let second = try await callVisionModel(jpeg: jpeg, provider: provider)
+        guard var parsed = try? parseJSONResponse(second.text) else {
             throw ExtractionError.invalidJSON("LLM did not return valid JSON after retry")
         }
+        parsed.providerId = second.providerId
         return validateReceipt(parsed)
     }
 

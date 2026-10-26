@@ -23,8 +23,6 @@ struct ProcessResult: Sendable {
 /// Ports receipt_pipeline.py: orchestrates scan -> extract -> categorize -> store -> organize
 /// for one receipt photo.
 enum ReceiptPipeline {
-    static let debugDump = true
-
     // ---- Store name canonicalization, copied verbatim from receipt_pipeline.py ----
 
     private static let storeNameMap: [String: String] = [
@@ -127,7 +125,7 @@ enum ReceiptPipeline {
     /// transaction for the receipt row + all line items -> move the image into the archive.
     /// `imagePath` is the uploads_incoming staging copy; it is deleted on every outcome except
     /// "imported but archive move failed" (then the receipt row still points at it).
-    static func processReceipt(imagePath: String, db: Database, env: AppEnvironment, taxonomy: Taxonomy) async -> ProcessResult {
+    static func processReceipt(imagePath: String, db: Database, env: AppEnvironment, taxonomy: Taxonomy, services: PipelineServices) async -> ProcessResult {
         var keepStagingFile = false
         defer {
             if !keepStagingFile { try? FileManager.default.removeItem(atPath: imagePath) }
@@ -141,27 +139,30 @@ enum ReceiptPipeline {
             }
 
             let warped = try DocumentScanner.scan(imagePath: imagePath)
-            var extracted = try await ReceiptExtractor.extractAndValidate(image: warped)
+            var extracted = try await ReceiptExtractor.extractAndValidate(image: warped, provider: services.extraction)
             extracted.store = canonicalizeStore(extracted.store)
 
-            if debugDump {
-                let stem = URL(fileURLWithPath: imagePath).deletingPathExtension().lastPathComponent
-                let debugPath = env.debugDir.appendingPathComponent("\(stem).json")
-                if let data = extracted.toJSONData() {
-                    try? data.write(to: debugPath)
-                }
+            let debugPath = env.debugDir.appendingPathComponent(
+                "\(URL(fileURLWithPath: imagePath).deletingPathExtension().lastPathComponent).json"
+            )
+            if services.debugDump, let data = extracted.toJSONData() {
+                try? data.write(to: debugPath)
             }
 
-            // Categorize everything before writing anything. item_dictionary upserts happen
-            // here, outside the receipt transaction - it's a shared cache, so entries created
-            // for a receipt that later fails are harmless.
-            var categorized: [(item: ExtractedItem, name: String, dictId: Int)] = []
-            for item in extracted.items {
-                let itemName = item.name ?? item.rawText ?? ""
-                let dictEntry = try await ItemCategorizer.getOrCreateItem(
-                    db: db, rawName: itemName, taxonomy: taxonomy, storeName: extracted.store, logURL: env.classificationLogURL
-                )
-                categorized.append((item, itemName, dictEntry.id))
+            // Categorize everything before writing anything: one dictionary load and one batched
+            // LLM call for the whole receipt. item_dictionary upserts happen here, outside the
+            // receipt transaction - it's a shared cache, so entries created for a receipt that
+            // later fails are harmless.
+            let itemNames = extracted.items.map { $0.name ?? $0.rawText ?? "" }
+            let (dictEntries, classificationProviders) = try await ItemCategorizer.resolveItems(
+                db: db, rawNames: itemNames, taxonomy: taxonomy, storeName: extracted.store,
+                logURL: env.classificationLogURL, provider: services.classification
+            )
+            let categorized: [(item: ExtractedItem, name: String, dictId: Int)] = zip(extracted.items, zip(itemNames, dictEntries))
+                .map { ($0, $1.0, $1.1.id) }
+
+            if services.debugDump, let data = extracted.toJSONData(extra: ["classification_providers": classificationProviders]) {
+                try? data.write(to: debugPath)
             }
 
             // Same store + date + total (and time, when both have one) as a live receipt:

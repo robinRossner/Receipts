@@ -9,6 +9,8 @@ final class ReceiptStore: ObservableObject {
     let env: AppEnvironment
     let db: Database
     let taxonomy: Taxonomy
+    /// LLM providers + pipeline switches, rebuilt from LLMSettings whenever Settings change.
+    private(set) var services: PipelineServices
 
     struct HighlightRequest: Equatable {
         let receiptId: Int
@@ -36,7 +38,8 @@ final class ReceiptStore: ObservableObject {
     @Published var deletedReceipts: [ReceiptSummary] = []
     /// Last failed database/file operation, shown as a dismissible banner in ContentView.
     @Published var lastError: String?
-    @Published var ollamaWarning: String?
+    /// From the selected AI backend's readiness() check; shown in the top bar.
+    @Published var providerWarning: String?
     @Published var highlightRequest: HighlightRequest?
 
     /// Mirrors goToReceiptItem() in dashboard.html: jump to the Review tab, load the receipt,
@@ -46,18 +49,47 @@ final class ReceiptStore: ObservableObject {
         highlightRequest = HighlightRequest(receiptId: receiptId, itemDictionaryId: itemDictionaryId, token: UUID())
     }
 
-    init(env: AppEnvironment, db: Database, taxonomy: Taxonomy) {
+    init(env: AppEnvironment, db: Database, taxonomy: Taxonomy, settings: LLMSettings = .load()) {
         self.env = env
         self.db = db
         self.taxonomy = taxonomy
+        self.settings = settings
+        self.services = ProviderFactory.makeServices(settings: settings, env: env)
     }
 
     private func report(_ action: String, _ error: Error) {
         lastError = "\(action) failed: \(error)"
     }
 
-    func bootstrapOllama() async {
-        ollamaWarning = await OllamaProcessManager.ensureReady(logDirectory: env.logDir)
+    // MARK: - AI backend
+
+    private var settings: LLMSettings
+    private var readinessTask: Task<Void, Never>?
+
+    /// Asks the selected backend whether it's usable (Ollama: starts `ollama serve`, checks models).
+    func checkProviderReadiness() async {
+        let health = services.health
+        providerWarning = await health.readiness().warningMessage
+    }
+
+    /// Called by SettingsView after any change: rebuilds the providers from the stored settings
+    /// and, if anything backend-related changed, re-checks readiness (debounced, since text
+    /// fields report every keystroke). Receipts already processing keep their old services.
+    func applySettings() {
+        let newSettings = LLMSettings.load()
+        guard newSettings != settings else { return }
+        var backendOnly = newSettings
+        backendOnly.debugDump = settings.debugDump
+        let backendChanged = backendOnly != settings
+        settings = newSettings
+        services = ProviderFactory.makeServices(settings: newSettings, env: env)
+        guard backendChanged else { return }
+        readinessTask?.cancel()
+        readinessTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.checkProviderReadiness()
+        }
     }
 
     // MARK: - Listing / detail (GET /receipts, GET /receipts/{id})
@@ -130,7 +162,7 @@ final class ReceiptStore: ObservableObject {
     /// Processes one or more receipt photos, in order. Multiple files (from a multi-select or
     /// a multi-file drop) are handled sequentially rather than in parallel, both so the
     /// "Reading receipt N of M" progress label is meaningful and so a burst of uploads doesn't
-    /// hammer Ollama with concurrent requests it has to queue anyway.
+    /// hammer the AI backend with concurrent requests it has to queue anyway.
     func upload(fileURLs: [URL]) async {
         guard !fileURLs.isEmpty else { return }
         isProcessingUpload = true
@@ -150,7 +182,7 @@ final class ReceiptStore: ObservableObject {
 
     /// Copies the picked file into a staging folder (mirrors INCOMING_FOLDER in api.py) and
     /// runs the full pipeline on it. The actual pipeline work (Vision document scanning, JPEG
-    /// encoding, Ollama calls) runs in a detached task rather than inline here - `upload` is a
+    /// encoding, LLM calls) runs in a detached task rather than inline here - `upload` is a
     /// method on this `@MainActor` store, and that CPU-bound work has no `await` points of its
     /// own to yield at, so running it directly here would freeze the entire UI (every button
     /// and text field, including on receipts you're not even touching) for the whole duration.
@@ -176,9 +208,10 @@ final class ReceiptStore: ObservableObject {
         let db = db
         let env = env
         let taxonomy = taxonomy
+        let services = services
         let imagePath = tempPath.path
         let result = await Task.detached(priority: .userInitiated) {
-            await ReceiptPipeline.processReceipt(imagePath: imagePath, db: db, env: env, taxonomy: taxonomy)
+            await ReceiptPipeline.processReceipt(imagePath: imagePath, db: db, env: env, taxonomy: taxonomy, services: services)
         }.value
 
         if let dupId = result.duplicateOf {
@@ -251,7 +284,8 @@ final class ReceiptStore: ObservableObject {
             let store = row.string(0)
             let totalPrice = round2(quantity * unitPrice)
             let entry = try await ItemCategorizer.getOrCreateItem(
-                db: db, rawName: name, taxonomy: taxonomy, storeName: store, logURL: env.classificationLogURL
+                db: db, rawName: name, taxonomy: taxonomy, storeName: store, logURL: env.classificationLogURL,
+                provider: services.classification
             )
             try await db.run(
                 """

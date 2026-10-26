@@ -43,7 +43,7 @@ struct ContentView: View {
                 .font(AppTheme.display(20))
                 .foregroundColor(AppTheme.ink)
             Spacer()
-            if let warning = store.ollamaWarning {
+            if let warning = store.providerWarning {
                 Text(warning)
                     .font(AppTheme.body(11))
                     .foregroundColor(AppTheme.penRed)
