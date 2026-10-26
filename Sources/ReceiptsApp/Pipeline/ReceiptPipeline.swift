@@ -18,6 +18,13 @@ struct ProcessResult: Sendable {
     var errorMessage: String?
     /// Set when the file's bytes match an already-imported (non-deleted) receipt; nothing was written.
     var duplicateOf: Int?
+    /// The task was cancelled before anything was committed; staging file removed, nothing written.
+    var cancelled = false
+}
+
+/// Stage the pipeline is in, reported through processReceipt's progress callback.
+enum ProcessStage: Sendable {
+    case scanning, extracting, categorizing, saving
 }
 
 /// Ports receipt_pipeline.py: orchestrates scan -> extract -> categorize -> store -> organize
@@ -125,7 +132,8 @@ enum ReceiptPipeline {
     /// transaction for the receipt row + all line items -> move the image into the archive.
     /// `imagePath` is the uploads_incoming staging copy; it is deleted on every outcome except
     /// "imported but archive move failed" (then the receipt row still points at it).
-    static func processReceipt(imagePath: String, db: Database, env: AppEnvironment, taxonomy: Taxonomy, services: PipelineServices) async -> ProcessResult {
+    static func processReceipt(imagePath: String, db: Database, env: AppEnvironment, taxonomy: Taxonomy, services: PipelineServices,
+                               progress: (@Sendable (ProcessStage) -> Void)? = nil) async -> ProcessResult {
         var keepStagingFile = false
         defer {
             if !keepStagingFile { try? FileManager.default.removeItem(atPath: imagePath) }
@@ -138,7 +146,10 @@ enum ReceiptPipeline {
                 return ProcessResult(success: false, receiptId: nil, errorMessage: "Already imported (receipt #\(dupId))", duplicateOf: dupId)
             }
 
+            progress?(.scanning)
             let warped = try DocumentScanner.scan(imagePath: imagePath)
+            try Task.checkCancellation()
+            progress?(.extracting)
             var extracted = try await ReceiptExtractor.extractAndValidate(image: warped, provider: services.extraction)
             extracted.store = canonicalizeStore(extracted.store)
 
@@ -153,6 +164,8 @@ enum ReceiptPipeline {
             // LLM call for the whole receipt. item_dictionary upserts happen here, outside the
             // receipt transaction - it's a shared cache, so entries created for a receipt that
             // later fails are harmless.
+            try Task.checkCancellation()
+            progress?(.categorizing)
             let itemNames = extracted.items.map { $0.name ?? $0.rawText ?? "" }
             let (dictEntries, classificationProviders) = try await ItemCategorizer.resolveItems(
                 db: db, rawNames: itemNames, taxonomy: taxonomy, storeName: extracted.store,
@@ -181,6 +194,9 @@ enum ReceiptPipeline {
                 extracted.needsReview = true
             }
 
+            // Last cancellation point: once the transaction starts, the receipt is written in full.
+            try Task.checkCancellation()
+            progress?(.saving)
             let now = isoNow()
             let receiptIdInt = try await db.transaction { conn -> Int in
                 let receiptId = try conn.run(
@@ -236,6 +252,9 @@ enum ReceiptPipeline {
 
             return ProcessResult(success: true, receiptId: receiptIdInt, errorMessage: nil)
         } catch {
+            if error is CancellationError || Task.isCancelled {
+                return ProcessResult(success: false, receiptId: nil, errorMessage: "Cancelled", cancelled: true)
+            }
             return ProcessResult(success: false, receiptId: nil, errorMessage: error.localizedDescription)
         }
     }

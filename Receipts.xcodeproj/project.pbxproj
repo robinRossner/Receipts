@@ -32,6 +32,8 @@
 		000000000000000000100045 /* ReceiptDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100044 /* ReceiptDetailView.swift */; };
 		000000000000000000100047 /* ReceiptListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100046 /* ReceiptListView.swift */; };
 		000000000000000000100049 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100048 /* ReviewView.swift */; };
+		0000000000000000001001A1 /* UploadQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0000000000000000001001A0 /* UploadQueue.swift */; };
+		0000000000000000001001A3 /* UploadQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0000000000000000001001A2 /* UploadQueueView.swift */; };
 		00000000000000000010004B /* UploadZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004A /* UploadZoneView.swift */; };
 		000000000000000000100009 /* category_taxonomy.json in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100008 /* category_taxonomy.json */; };
 		00000000000000000010004D /* LLMProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010004C /* LLMProvider.swift */; };
@@ -70,6 +72,8 @@
 		000000000000000000100044 /* ReceiptDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptDetailView.swift; sourceTree = "<group>"; };
 		000000000000000000100046 /* ReceiptListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptListView.swift; sourceTree = "<group>"; };
 		000000000000000000100048 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
+		0000000000000000001001A0 /* UploadQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueue.swift; sourceTree = "<group>"; };
+		0000000000000000001001A2 /* UploadQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueView.swift; sourceTree = "<group>"; };
 		00000000000000000010004A /* UploadZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadZoneView.swift; sourceTree = "<group>"; };
 		000000000000000000100008 /* category_taxonomy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = category_taxonomy.json; sourceTree = "<group>"; };
 		000000000000000000100006 /* Receipts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Receipts.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -115,6 +119,7 @@
 			isa = PBXGroup;
 			children = (
 				00000000000000000010001C /* Database.swift */,
+				0000000000000000001001A0 /* UploadQueue.swift */,
 				00000000000000000010001E /* ReceiptStore.swift */,
 			);
 			path = Database;
@@ -173,6 +178,7 @@
 				000000000000000000100046 /* ReceiptListView.swift */,
 				000000000000000000100048 /* ReviewView.swift */,
 				00000000000000000010004A /* UploadZoneView.swift */,
+				0000000000000000001001A2 /* UploadQueueView.swift */,
 				000000000000000000100054 /* SettingsView.swift */,
 			);
 			path = Views;
@@ -259,6 +265,7 @@
 				000000000000000000100019 /* AppEnvironment.swift in Sources */,
 				00000000000000000010001B /* ReceiptsApp.swift in Sources */,
 				00000000000000000010001D /* Database.swift in Sources */,
+				0000000000000000001001A1 /* UploadQueue.swift in Sources */,
 				00000000000000000010001F /* ReceiptStore.swift in Sources */,
 				000000000000000000100021 /* LineItem.swift in Sources */,
 				000000000000000000100023 /* Receipt.swift in Sources */,
@@ -282,6 +289,7 @@
 				000000000000000000100047 /* ReceiptListView.swift in Sources */,
 				000000000000000000100049 /* ReviewView.swift in Sources */,
 				00000000000000000010004B /* UploadZoneView.swift in Sources */,
+				0000000000000000001001A3 /* UploadQueueView.swift in Sources */,
 				00000000000000000010004D /* LLMProvider.swift in Sources */,
 				00000000000000000010004F /* OllamaProvider.swift in Sources */,
 				000000000000000000100051 /* LLMSettings.swift in Sources */,

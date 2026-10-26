@@ -32,6 +32,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(AppTheme.desk)
+        .onChange(of: store.isImporterPresented) {
+            if store.isImporterPresented { page = .review }
+        }
         .onChange(of: store.highlightRequest) {
             if store.highlightRequest != nil { page = .review }
         }

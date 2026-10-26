@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Ports every endpoint from api.py into plain async methods that SwiftUI views call directly -
@@ -18,23 +19,16 @@ final class ReceiptStore: ObservableObject {
         let token: UUID
     }
 
-    /// Outcome of one file in a batch upload.
-    struct UploadResult: Identifiable {
-        enum Outcome {
-            case success(receiptId: Int)
-            case duplicate(receiptId: Int)
-            case failure(String)
-        }
-        let id = UUID()
-        let fileName: String
-        let outcome: Outcome
-    }
-
     @Published var receipts: [ReceiptSummary] = []
     @Published var selectedReceipt: ReceiptDetail?
     @Published var isProcessingUpload = false
-    @Published var uploadProgressLabel: String?
-    @Published var uploadResults: [UploadResult] = []
+    /// Batch upload queue, shown in the review sidebar. Jobs stay until cleared.
+    @Published var uploadQueue: [UploadJob] = []
+    /// Set by File > Import Receipts… (⌘O) and the upload zone; presents the file picker.
+    @Published var isImporterPresented = false
+    private var uploadTasks: [UUID: Task<Void, Never>] = [:]
+    private var inFlightHashes: Set<String> = []
+    private var hashWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     @Published var deletedReceipts: [ReceiptSummary] = []
     /// Last failed database/file operation, shown as a dismissible banner in ContentView.
     @Published var lastError: String?
@@ -161,34 +155,126 @@ final class ReceiptStore: ObservableObject {
 
     // MARK: - Upload (POST /receipts/upload)
 
-    /// Processes one or more receipt photos, in order. Multiple files (from a multi-select or
-    /// a multi-file drop) are handled sequentially rather than in parallel, both so the
-    /// "Reading receipt N of M" progress label is meaningful and so a burst of uploads doesn't
-    /// hammer the AI backend with concurrent requests it has to queue anyway.
-    func upload(fileURLs: [URL]) async {
-        guard !fileURLs.isEmpty else { return }
-        isProcessingUpload = true
-        uploadResults = []
-        defer {
-            isProcessingUpload = false
-            uploadProgressLabel = nil
-        }
-
-        for (index, url) in fileURLs.enumerated() {
-            uploadProgressLabel = fileURLs.count > 1
-                ? "Reading receipt \(index + 1) of \(fileURLs.count)…"
-                : "Reading receipt…"
-            await uploadOne(fileURL: url)
+    /// How many receipts may be in the pipeline at once, from the active backend chain. Local
+    /// Ollama as the primary is GPU-bound, so it runs one at a time; the Claude API tolerates
+    /// parallel requests; the CLI spawns a process per call, so keep it modest. Tune here.
+    static func maxConcurrentUploads(for settings: LLMSettings) -> Int {
+        switch ProviderFactory.backendChain(for: settings).first ?? .ollama {
+        case .ollama: return 1
+        case .anthropicAPI: return 3
+        case .claudeSubscriptionToken, .claudeCodeLogin: return 2
         }
     }
 
-    /// Copies the picked file into a staging folder (mirrors INCOMING_FOLDER in api.py) and
-    /// runs the full pipeline on it. The actual pipeline work (Vision document scanning, JPEG
-    /// encoding, LLM calls) runs in a detached task rather than inline here - `upload` is a
-    /// method on this `@MainActor` store, and that CPU-bound work has no `await` points of its
-    /// own to yield at, so running it directly here would freeze the entire UI (every button
-    /// and text field, including on receipts you're not even touching) for the whole duration.
-    private func uploadOne(fileURL: URL) async {
+    /// Adds files (and the image files directly inside any folders) to the queue and starts
+    /// processing. Safe to call while a batch is running; new jobs just join the queue.
+    func upload(fileURLs: [URL]) {
+        let (supported, unsupported) = UploadInput.expand(fileURLs)
+        var added: [UploadJob] = []
+        for url in supported { added.append(UploadJob(fileURL: url)) }
+        for url in unsupported {
+            var job = UploadJob(fileURL: url)
+            job.state = .failed("Unsupported file type (\(url.pathExtension.isEmpty ? "no extension" : url.pathExtension.lowercased()))")
+            added.append(job)
+        }
+        guard !added.isEmpty else { return }
+        uploadQueue.append(contentsOf: added)
+        for job in added where job.state == .queued {
+            Task { [weak self] in
+                let image = await Task.detached(priority: .utility) { UploadInput.thumbnail(for: job.fileURL) }.value
+                self?.setThumbnail(image, for: job.id)
+            }
+        }
+        pumpUploadQueue()
+    }
+
+    private func setThumbnail(_ image: NSImage?, for id: UUID) {
+        guard let i = uploadQueue.firstIndex(where: { $0.id == id }) else { return }
+        uploadQueue[i].thumbnail = image
+    }
+
+    private func setState(_ state: UploadJob.State, for id: UUID) {
+        guard let i = uploadQueue.firstIndex(where: { $0.id == id }) else { return }
+        uploadQueue[i].state = state
+    }
+
+    /// Starts queued jobs until the concurrency limit is reached.
+    private func pumpUploadQueue() {
+        let limit = Self.maxConcurrentUploads(for: settings)
+        while uploadTasks.count < limit, let job = uploadQueue.first(where: { $0.state == .queued && uploadTasks[$0.id] == nil }) {
+            let id = job.id
+            setState(.scanning, for: id)
+            uploadTasks[id] = Task { [weak self] in
+                await self?.runUploadJob(id: id)
+                self?.uploadJobEnded(id: id)
+            }
+        }
+        isProcessingUpload = !uploadTasks.isEmpty
+    }
+
+    private func uploadJobEnded(id: UUID) {
+        uploadTasks[id] = nil
+        pumpUploadQueue()
+        if uploadTasks.isEmpty {
+            // Batch drained (or only cancelled/failed jobs remain): one full refresh, including trash.
+            Task { await refreshList() }
+        }
+    }
+
+    /// Stops queued jobs and asks running ones to cancel at their next stage boundary (an
+    /// in-flight LLM call may still finish; nothing is written after cancellation is seen).
+    func cancelAllUploads() {
+        for i in uploadQueue.indices where uploadQueue[i].state == .queued { uploadQueue[i].state = .cancelled }
+        for task in uploadTasks.values { task.cancel() }
+    }
+
+    func cancelUpload(id: UUID) {
+        if uploadQueue.first(where: { $0.id == id })?.state == .queued { setState(.cancelled, for: id) }
+        uploadTasks[id]?.cancel()
+    }
+
+    func retryFailedUploads() {
+        for i in uploadQueue.indices {
+            if case .failed = uploadQueue[i].state { uploadQueue[i].state = .queued }
+        }
+        pumpUploadQueue()
+    }
+
+    /// Removes done, duplicate and cancelled jobs; failed ones stay so they can be retried.
+    func clearFinishedUploads() {
+        uploadQueue.removeAll { job in
+            switch job.state {
+            case .done, .duplicate, .cancelled: return true
+            default: return false
+            }
+        }
+    }
+
+    /// Waits until no other job is running the pipeline on a file with this hash. The pipeline's
+    /// duplicate check (SELECT) and insert aren't atomic across jobs, so two identical files in
+    /// one batch would both pass the check; serialising per hash makes the second one see the
+    /// first's committed row and report "duplicate".
+    private func acquireHash(_ hash: String) async {
+        while inFlightHashes.contains(hash) {
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                hashWaiters[hash, default: []].append(c)
+            }
+        }
+        inFlightHashes.insert(hash)
+    }
+
+    private func releaseHash(_ hash: String) {
+        inFlightHashes.remove(hash)
+        let waiters = hashWaiters.removeValue(forKey: hash) ?? []
+        waiters.forEach { $0.resume() }
+    }
+
+    /// Copies the file into a staging folder (mirrors INCOMING_FOLDER in api.py) and runs the
+    /// full pipeline on it. The pipeline work (Vision scanning, JPEG encoding, LLM calls) runs
+    /// in a detached task rather than inline: this store is @MainActor and that CPU-bound work
+    /// would otherwise freeze the UI. Cancelling the job's Task is forwarded to that detached task.
+    private func runUploadJob(id: UUID) async {
+        guard let fileURL = uploadQueue.first(where: { $0.id == id })?.fileURL else { return }
         let ext = fileURL.pathExtension.isEmpty ? "jpg" : fileURL.pathExtension
         let stagingDir = env.appSupportDir.appendingPathComponent("uploads_incoming", isDirectory: true)
         try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
@@ -201,35 +287,64 @@ final class ReceiptStore: ObservableObject {
             try FileManager.default.copyItem(at: fileURL, to: tempPath)
         } catch {
             try? FileManager.default.removeItem(at: tempPath)
-            uploadResults.append(UploadResult(
-                fileName: fileURL.lastPathComponent, outcome: .failure("Couldn't read the file: \(error.localizedDescription)")
-            ))
+            setState(.failed("Couldn't read the file: \(error.localizedDescription)"), for: id)
             return
         }
-
-        let db = db
-        let env = env
-        let taxonomy = taxonomy
-        let services = services
         let imagePath = tempPath.path
-        let result = await Task.detached(priority: .userInitiated) {
-            await ReceiptPipeline.processReceipt(imagePath: imagePath, db: db, env: env, taxonomy: taxonomy, services: services)
-        }.value
+        // From here the staging file is removed by processReceipt on every path except "imported
+        // but archive move failed"; this guards the paths that never reach it.
+        guard !Task.isCancelled else {
+            try? FileManager.default.removeItem(at: tempPath)
+            setState(.cancelled, for: id)
+            return
+        }
 
-        if let dupId = result.duplicateOf {
-            uploadResults.append(UploadResult(fileName: fileURL.lastPathComponent, outcome: .duplicate(receiptId: dupId)))
+        let hash = await Task.detached(priority: .userInitiated) { try? ReceiptPipeline.sha256Hex(ofFileAt: imagePath) }.value
+        if let hash { await acquireHash(hash) }
+        defer { if let hash { releaseHash(hash) } }
+        guard !Task.isCancelled else {
+            try? FileManager.default.removeItem(at: tempPath)
+            setState(.cancelled, for: id)
             return
         }
-        guard result.success, let receiptId = result.receiptId else {
-            uploadResults.append(UploadResult(
-                fileName: fileURL.lastPathComponent,
-                outcome: .failure("\(result.errorMessage ?? "Unknown error"). Try a clearer, flatter photo.")
-            ))
-            return
+
+        let db = db, env = env, taxonomy = taxonomy, services = services
+        let store = self  // @MainActor, hence Sendable; held only for the duration of this job
+        let work = Task.detached(priority: .userInitiated) {
+            await ReceiptPipeline.processReceipt(
+                imagePath: imagePath, db: db, env: env, taxonomy: taxonomy, services: services,
+                progress: { stage in
+                    Task { @MainActor in
+                        store.applyStage(stage, to: id)
+                    }
+                }
+            )
         }
-        uploadResults.append(UploadResult(fileName: fileURL.lastPathComponent, outcome: .success(receiptId: receiptId)))
-        await refreshList()
-        await loadReceiptDetail(id: receiptId)
+        let result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+
+        if result.cancelled {
+            setState(.cancelled, for: id)
+        } else if let dupId = result.duplicateOf {
+            setState(.duplicate(receiptId: dupId), for: id)
+        } else if result.success, let receiptId = result.receiptId {
+            setState(.done(receiptId: receiptId), for: id)
+            // Lightweight refresh so the receipt shows up now; the full refresh runs once at the end.
+            if let rows = try? await fetchSummaries(deleted: false) { receipts = rows }
+            if uploadQueue.count == 1 { await loadReceiptDetail(id: receiptId) }
+        } else {
+            setState(.failed("\(result.errorMessage ?? "Unknown error"). Try a clearer, flatter photo."), for: id)
+        }
+    }
+
+    private func applyStage(_ stage: ProcessStage, to id: UUID) {
+        // Late progress callbacks must not overwrite a terminal state.
+        guard let i = uploadQueue.firstIndex(where: { $0.id == id }), !uploadQueue[i].state.isFinished else { return }
+        switch stage {
+        case .scanning: uploadQueue[i].state = .scanning
+        case .extracting: uploadQueue[i].state = .extracting
+        case .categorizing: uploadQueue[i].state = .categorizing
+        case .saving: uploadQueue[i].state = .saving
+        }
     }
 
     // MARK: - Mutations
