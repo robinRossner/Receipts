@@ -52,6 +52,12 @@
 		000000000000000000100057 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100056 /* KeychainStore.swift */; };
 		000000000000000000100059 /* AnthropicAPIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000100058 /* AnthropicAPIProvider.swift */; };
 		00000000000000000010005B /* ClaudeCLIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000010005A /* ClaudeCLIProvider.swift */; };
+		000000000000000000210001 /* LegacyIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200001 /* LegacyIDs.swift */; };
+		000000000000000000210002 /* SyncDates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200002 /* SyncDates.swift */; };
+		000000000000000000210003 /* SyncSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200003 /* SyncSchema.swift */; };
+		000000000000000000210001 /* LegacyIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200001 /* LegacyIDs.swift */; };
+		000000000000000000210002 /* SyncDates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200002 /* SyncDates.swift */; };
+		000000000000000000210003 /* SyncSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200003 /* SyncSchema.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -101,6 +107,12 @@
 		000000000000000000100056 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		000000000000000000100058 /* AnthropicAPIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicAPIProvider.swift; sourceTree = "<group>"; };
 		00000000000000000010005A /* ClaudeCLIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCLIProvider.swift; sourceTree = "<group>"; };
+		000000000000000000200001 /* LegacyIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyIDs.swift; sourceTree = "<group>"; };
+		000000000000000000200002 /* SyncDates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDates.swift; sourceTree = "<group>"; };
+		000000000000000000200003 /* SyncSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSchema.swift; sourceTree = "<group>"; };
+		000000000000000000200001 /* LegacyIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyIDs.swift; sourceTree = "<group>"; };
+		000000000000000000200002 /* SyncDates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDates.swift; sourceTree = "<group>"; };
+		000000000000000000200003 /* SyncSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSchema.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +136,7 @@
 				000000000000000000100013 /* Database */,
 				000000000000000000100014 /* Models */,
 				000000000000000000100015 /* Pipeline */,
+				000000000000000000200000 /* Sync */,
 				000000000000000000100016 /* Theme */,
 				000000000000000000100017 /* Views */,
 				000000000000000000100007 /* Resources */,
@@ -224,6 +237,16 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		000000000000000000200000 /* Sync */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000200001 /* LegacyIDs.swift */,
+				000000000000000000200002 /* SyncDates.swift */,
+				000000000000000000200003 /* SyncSchema.swift */,
+			);
+			path = Sync;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -287,6 +310,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				000000000000000000100019 /* AppEnvironment.swift in Sources */,
+				000000000000000000210001 /* LegacyIDs.swift in Sources */,
+				000000000000000000210002 /* SyncDates.swift in Sources */,
+				000000000000000000210003 /* SyncSchema.swift in Sources */,
 				00000000000000000010001B /* ReceiptsApp.swift in Sources */,
 				00000000000000000010001D /* Database.swift in Sources */,
 				0000000000000000001001A1 /* UploadQueue.swift in Sources */,

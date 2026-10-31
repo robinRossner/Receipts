@@ -11,6 +11,11 @@ let package = Package(
             resources: [
                 .copy("Resources/category_taxonomy.json")
             ]
-        )
+        ),
+        .testTarget(
+            name: "ReceiptsAppTests",
+            dependencies: ["ReceiptsApp"],
+            path: "Tests/ReceiptsAppTests"
+        ),
     ]
 )

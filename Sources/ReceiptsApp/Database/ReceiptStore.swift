@@ -249,7 +249,7 @@ final class ReceiptStore: ObservableObject {
                    li.quantity, li.unit_price, li.total_price,
                    d.translation_en, d.category, d.subcategory, d.item_group, d.needs_review
             FROM line_items li JOIN item_dictionary d ON li.item_dictionary_id = d.id
-            WHERE li.receipt_id = ? ORDER BY li.id
+            WHERE li.receipt_id = ? ORDER BY li.position, li.id
             """, [.from(id)])
 
         let items = itemRows.map { r in

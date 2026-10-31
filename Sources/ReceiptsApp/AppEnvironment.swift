@@ -11,10 +11,24 @@ struct AppEnvironment: Sendable {
     let logDir: URL
     let classificationLogURL: URL
 
-    static func bootstrap() -> AppEnvironment {
+    /// Environment variable that moves the whole data directory (tests, e2e runs). Unset = the real
+    /// `~/Library/Application Support/ReceiptsApp/`.
+    static let dataDirEnvVar = "RECEIPTS_APP_DATA_DIR"
+
+    static func bootstrap(environment: [String: String] = ProcessInfo.processInfo.environment) -> AppEnvironment {
+        let base: URL
+        if let override = environment[dataDirEnvVar], !override.isEmpty {
+            base = URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
+        } else {
+            base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("ReceiptsApp", isDirectory: true)
+        }
+        return make(baseDir: base)
+    }
+
+    /// Creates the folder layout below `baseDir` and returns the environment for it.
+    static func make(baseDir base: URL) -> AppEnvironment {
         let fm = FileManager.default
-        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("ReceiptsApp", isDirectory: true)
         let archive = base.appendingPathComponent("receipts_archive", isDirectory: true)
         let debug = base.appendingPathComponent("debug_output", isDirectory: true)
         let logs = base.appendingPathComponent("logs", isDirectory: true)

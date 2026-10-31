@@ -274,6 +274,11 @@ actor Database {
         Migration(version: 6, name: "re-file manual overrides into new categories") { c, _ in
             try ItemCategorizer.applyManualRefilesV6(c, taxonomy: Taxonomy.load())
         },
+        // 7: cloud sync fields (uuid, updated_at, sync_state, photo/job status) + the triggers that
+        // track local edits. Existing rows get the UUIDs migrate_mac_data.py gives them (Sync/SyncSchema.swift).
+        Migration(version: 7, name: "sync fields and change tracking") { c, _ in
+            try SyncSchema.apply(c)
+        },
     ]
 
     static var latestSchemaVersion: Int { migrations.last?.version ?? 0 }
