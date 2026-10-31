@@ -566,5 +566,5 @@ the original upload is answered `200` without storing the photo again.
 1. Same as the phone for receipts, plus the [archive protocol](#protocol-for-the-archive-client)
    after each sync (and at least regularly, the server reminds after 30 days).
 2. Migrating the existing Mac database is a one-off job for the backend operator
-   (`python -m receipts.migrate_mac_data`, see `deploy/README.md` section 10); afterwards the
+   (`python -m receipts.migrate_mac_data`, see `deploy/README.md`, section 8); afterwards the
    Mac app can pull everything. Its photos are marked `archived` and are never uploaded.

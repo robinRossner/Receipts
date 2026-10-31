@@ -362,7 +362,8 @@ final class E2ETests: XCTestCase {
         XCTAssertEqual(secondReceipts, 6, "3 migrated + 3 uploaded")
 
         // nothing outside the temp dirs was touched
-        let touched = try FileManager.default.contentsOfDirectory(atPath: backendVar.path).filter {
+        // (backend/var does not exist in a fresh checkout: then there is nothing it could have touched)
+        let touched = ((try? FileManager.default.contentsOfDirectory(atPath: backendVar.path)) ?? []).filter {
             let attrs = try? FileManager.default.attributesOfItem(atPath: backendVar.appendingPathComponent($0).path)
             return (attrs?[.modificationDate] as? Date).map { $0 > ((try? FileManager.default.attributesOfItem(atPath: marker.path)[.modificationDate] as? Date) ?? Date.distantFuture) } ?? false
         }
