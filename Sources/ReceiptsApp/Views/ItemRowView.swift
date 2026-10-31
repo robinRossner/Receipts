@@ -63,9 +63,11 @@ struct ItemRowView: View {
             HStack(spacing: 4) {
                 TextField("", text: $qtyText)
                     .frame(width: 56)
+                    .decimalKeyboard()
                 Text("×").foregroundColor(AppTheme.inkSoft)
                 TextField("", text: $priceText)
                     .frame(width: 64)
+                    .decimalKeyboard()
                 Text("=").foregroundColor(AppTheme.inkSoft)
                 Text(previewTotal)
                     .fontWeight(.semibold)
@@ -84,30 +86,8 @@ struct ItemRowView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(AppTheme.body(12))
 
-            HStack(spacing: 6) {
-                Picker("", selection: $category) {
-                    ForEach(store.taxonomy.categoryNames(), id: \.self) { Text($0).tag($0) }
-                }
-                .frame(minWidth: 90, idealWidth: 130)
-                .onChange(of: category) {
-                    subcategory = store.taxonomy.subcategoryNames(in: category).first ?? ""
-                    itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
-                }
-
-                Picker("", selection: $subcategory) {
-                    ForEach(store.taxonomy.subcategoryNames(in: category), id: \.self) { Text($0).tag($0) }
-                }
-                .frame(minWidth: 90, idealWidth: 140)
-                .onChange(of: subcategory) {
-                    itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
-                }
-
-                Picker("", selection: $itemGroup) {
-                    ForEach(store.taxonomy.itemGroups(category: category, subcategory: subcategory), id: \.self) { Text($0).tag($0) }
-                }
-                .frame(minWidth: 90, idealWidth: 140)
-            }
-            .font(AppTheme.body(12))
+            categoryPickers
+                .font(AppTheme.body(12))
 
             if categoryChanged {
                 HStack(alignment: .top, spacing: 4) {
@@ -147,6 +127,42 @@ struct ItemRowView: View {
         .padding(item.needsReview ? 10 : 0)
         .background(item.needsReview ? AppTheme.penRedBg : Color.clear)
         .cornerRadius(item.needsReview ? 4 : 0)
+    }
+
+    /// category > subcategory > item_group. One row on the Mac; stacked and labelled on the phone, where three
+    /// pickers do not fit side by side.
+    @ViewBuilder
+    private var categoryPickers: some View {
+        #if os(macOS)
+        HStack(spacing: 6) { pickers(labelled: false) }
+        #else
+        VStack(alignment: .leading, spacing: 2) { pickers(labelled: true) }
+        #endif
+    }
+
+    @ViewBuilder
+    private func pickers(labelled: Bool) -> some View {
+        Picker(labelled ? "Category" : "", selection: $category) {
+            ForEach(store.taxonomy.categoryNames(), id: \.self) { Text($0).tag($0) }
+        }
+        .frame(minWidth: 90, idealWidth: 130)
+        .onChange(of: category) {
+            subcategory = store.taxonomy.subcategoryNames(in: category).first ?? ""
+            itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
+        }
+
+        Picker(labelled ? "Subcategory" : "", selection: $subcategory) {
+            ForEach(store.taxonomy.subcategoryNames(in: category), id: \.self) { Text($0).tag($0) }
+        }
+        .frame(minWidth: 90, idealWidth: 140)
+        .onChange(of: subcategory) {
+            itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
+        }
+
+        Picker(labelled ? "Item group" : "", selection: $itemGroup) {
+            ForEach(store.taxonomy.itemGroups(category: category, subcategory: subcategory), id: \.self) { Text($0).tag($0) }
+        }
+        .frame(minWidth: 90, idealWidth: 140)
     }
 
     private func save() async {

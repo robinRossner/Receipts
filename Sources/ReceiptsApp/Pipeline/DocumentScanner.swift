@@ -26,6 +26,14 @@ enum ScanError: Error, LocalizedError {
 /// uploads_incoming got stuck).
 enum DocumentScanner {
     static func scan(imagePath: String) throws -> CIImage {
+        let uprightImage = try load(imagePath: imagePath)
+        let corners = try detectDocumentCorners(in: uprightImage)
+        return warp(uprightImage, to: corners)
+    }
+
+    /// The image with its EXIF orientation baked in (no document search): for photos that are already straight
+    /// (the phone's document camera) and as a fallback when no document is found.
+    static func load(imagePath: String) throws -> CIImage {
         let url = URL(fileURLWithPath: imagePath)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
@@ -35,10 +43,7 @@ enum DocumentScanner {
         // Bake the EXIF orientation into the pixel buffer, same intent as
         // ImageOps.exif_transpose() in the Python version's load_image_upright().
         let orientation = imageOrientation(from: source)
-        let uprightImage = CIImage(cgImage: cgImage).oriented(orientation)
-
-        let corners = try detectDocumentCorners(in: uprightImage)
-        return warp(uprightImage, to: corners)
+        return CIImage(cgImage: cgImage).oriented(orientation)
     }
 
     private static func imageOrientation(from source: CGImageSource) -> CGImagePropertyOrientation {

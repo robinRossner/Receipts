@@ -40,10 +40,16 @@ struct SyncBannersView: View {
     @ObservedObject var sync: SyncCoordinator
     @EnvironmentObject var store: ReceiptStore
 
+    #if os(macOS)
+    private let bannerPadding: CGFloat = 24
+    #else
+    private let bannerPadding: CGFloat = 14
+    #endif
+
     var body: some View {
         ForEach(sync.banners, id: \.self) { text in
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "externaldrive.badge.exclamationmark").foregroundColor(AppTheme.penRed)
+                Image(systemName: "externaldrive.badge.exclamationmark").foregroundColor(AppTheme.penRed).accessibilityHidden(true)
                 Text(text)
                     .font(AppTheme.body(12))
                     .foregroundColor(AppTheme.penRed)
@@ -54,7 +60,7 @@ struct SyncBannersView: View {
                     .foregroundColor(AppTheme.penRed)
                     .disabled(sync.phase == .syncing)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, bannerPadding)
             .padding(.vertical, 8)
             .background(AppTheme.penRedBg)
         }
@@ -89,7 +95,7 @@ struct ReceiptProcessingPanel: View {
                 Text((error ?? "The server could not read the receipt.") + " Retry it, or fill in the fields below by hand.")
                 HStack {
                     Button("Retry extraction") { Task { await store.retryServerExtraction(id: detail.id) } }
-                    if detail.photoLocation == "server" {
+                    if detail.photoLocation == "server" && store.sync.capabilities.archivesPhotos {
                         Button("Give up and archive the photo…") { confirmGiveUp = true }
                     }
                 }
@@ -113,6 +119,7 @@ struct ReceiptProcessingPanel: View {
     }
 }
 
+#if os(macOS)
 /// Settings > Cloud sync: switch, server URL, token (Keychain), connection test, status.
 struct CloudSyncSettingsView: View {
     @EnvironmentObject var store: ReceiptStore
@@ -199,3 +206,4 @@ struct CloudSyncSettingsView: View {
         .onChange(of: serverURL) { store.syncSettingsChanged() }
     }
 }
+#endif

@@ -25,8 +25,16 @@ enum PhotoPreparer {
     }
 
     /// Scan (find the receipt, perspective-correct) and encode.
-    static func prepare(imagePath: String) throws -> Data {
-        try encode(try DocumentScanner.scan(imagePath: imagePath))
+    /// - `straighten: false` skips the search (the document camera already straightened the page).
+    /// - `allowUnstraightened`: when no receipt outline is found, send the upright photo as it is instead of failing
+    ///   (the phone does this: the server's vision model can read a photo that was not cropped).
+    static func prepare(imagePath: String, straighten: Bool = true, allowUnstraightened: Bool = false) throws -> Data {
+        guard straighten else { return try encode(try DocumentScanner.load(imagePath: imagePath)) }
+        do {
+            return try encode(try DocumentScanner.scan(imagePath: imagePath))
+        } catch ScanError.noDocumentFound where allowUnstraightened {
+            return try encode(try DocumentScanner.load(imagePath: imagePath))
+        }
     }
 
     /// JPEG of at most `maxBytes` and `maxDimension`: lower the quality first, then the size.

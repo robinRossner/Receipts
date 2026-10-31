@@ -1,10 +1,5 @@
 import SwiftUI
 
-enum AppPage {
-    case review
-    case overview
-}
-
 /// Ports dashboard.html's top-level layout: a top nav with Review/Overview tabs, and the two
 /// pages below it. No "Stop" button - that only existed to kill a separate server process,
 /// which this single-process app doesn't have (⌘Q is the native equivalent).

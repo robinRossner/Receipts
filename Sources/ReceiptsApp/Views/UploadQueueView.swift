@@ -82,7 +82,7 @@ struct UploadQueueView: View {
 
     @ViewBuilder private func thumbnail(_ job: UploadJob) -> some View {
         if let image = job.thumbnail {
-            Image(nsImage: image)
+            Image(platformImage: image)
                 .resizable()
                 .scaledToFill()
                 .frame(width: 22, height: 22)

@@ -58,6 +58,8 @@ extension ReceiptStore {
         guard !Task.isCancelled else { setState(.cancelled, for: id); return }
 
         let imagePath = tempURL.path
+        let straighten = !job.preStraightened
+        let phone = sync.capabilities.cachesPhotos
         let hash = await Task.detached(priority: .userInitiated) { try? ReceiptPipeline.sha256Hex(ofFileAt: imagePath) }.value
         if let hash { await acquireHash(hash) }
         defer { if let hash { releaseHash(hash) } }
@@ -69,7 +71,7 @@ extension ReceiptStore {
         guard !Task.isCancelled else { setState(.cancelled, for: id); return }
 
         let prepared: Result<Data, Error> = await Task.detached(priority: .userInitiated) {
-            Result { try PhotoPreparer.prepare(imagePath: imagePath) }
+            Result { try PhotoPreparer.prepare(imagePath: imagePath, straighten: straighten, allowUnstraightened: phone) }
         }.value
         guard !Task.isCancelled else { setState(.cancelled, for: id); return }
         let data: Data
@@ -141,6 +143,32 @@ extension ReceiptStore {
         if selectedReceiptID == id { await loadReceiptDetail(id: id) }
     }
 
+    /// The phone shows its cached copy; if there is none and the server still holds the photo it is downloaded now.
+    /// A photo that went to the laptop archive and is not cached here becomes the "on your laptop" note.
+    func ensureLocalPhoto(id: Int) async {
+        guard sync.capabilities.cachesPhotos, let uuid = try? await sync.store.uuid(forLocalReceipt: id) else { return }
+        switch await sync.ensurePhoto(uuid: uuid) {
+        case .cached:
+            photoFetchNotes[id] = nil
+            if selectedReceiptID == id { await loadReceiptDetail(id: id) }
+        case .onLaptop:
+            // The server said 410 photo_archived: its sync data will say so too; show it now.
+            try? await db.run("UPDATE receipts SET photo_location = 'archived' WHERE uuid = ? AND photo_location = 'server'", [.text(uuid)])
+            photoFetchNotes[id] = nil
+            if selectedReceiptID == id { await loadReceiptDetail(id: id) }
+        case .unavailable(let message):
+            photoFetchNotes[id] = "The photo could not be loaded (\(message))."
+        }
+    }
+
+    /// Settings > "Clear cached photos" (phone).
+    func clearPhotoCache() async {
+        await sync.clearPhotoCache()
+        ReceiptImageCache.shared.removeAll()
+        photoFetchNotes = [:]
+        if let id = selectedReceiptID { await loadReceiptDetail(id: id) }
+    }
+
     /// Puts a photo the server refused (not an image, too large) back in the upload queue.
     func retryUpload(id: Int) async {
         try? await sync.store.requeueUpload(localID: id)
@@ -161,6 +189,7 @@ extension ReceiptStore {
     /// The user's explicit choice to give up on a receipt the server could not read: its photo is archived here anyway
     /// (the only place `accept_failed` is ever sent), and then leaves the server.
     func giveUpAndArchive(id: Int) async {
+        guard sync.capabilities.archivesPhotos else { return }   // the phone is not the archive
         await sync.acceptFailedAndArchive(localID: id)
         await refreshList()
         if selectedReceiptID == id { await loadReceiptDetail(id: id) }

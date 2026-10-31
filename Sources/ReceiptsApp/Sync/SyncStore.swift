@@ -7,6 +7,8 @@ struct SyncPaths: Sendable {
     let archiveDir: URL
     /// Prepared JPEGs that wait for (or just completed) their upload. Uploads must retry with the SAME bytes.
     var outboxDir: URL { appSupportDir.appendingPathComponent("uploads_outbox", isDirectory: true) }
+    /// The phone's bounded cache of photos (see `PhotoCache`).
+    var photoCacheDir: URL { appSupportDir.appendingPathComponent("photo_cache", isDirectory: true) }
 
     /// Same rule as `AppEnvironment.resolveImagePath`: stored paths are relative to the app-support dir.
     func resolve(_ stored: String?) -> URL? {
@@ -358,6 +360,10 @@ struct SyncStore: Sendable {
     /// The verified copy is on disk: the receipt now shows it from there. (Does not claim `archived`: the server decides.)
     func setLocalPhoto(uuid: String, path: String) async throws {
         try await db.run("UPDATE receipts SET source_image = ? WHERE uuid = ?", [.text(path), .text(uuid)])
+    }
+
+    func photoSHA256(uuid: String) async throws -> String? {
+        try await db.queryOne("SELECT photo_sha256 FROM receipts WHERE uuid = ?", [.text(uuid)])?.string(0)
     }
 
     func markArchived(uuid: String, path: String) async throws {

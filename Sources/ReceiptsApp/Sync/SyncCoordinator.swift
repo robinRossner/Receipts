@@ -26,6 +26,9 @@ final class SyncCoordinator: ObservableObject {
     @Published private(set) var rejectedRecords = 0
 
     let store: SyncStore
+    /// What this device may do (the Mac archives photos, the iPhone does not); handed to every engine it builds.
+    let capabilities: SyncCapabilities
+    private let deviceId: String
     private let defaults: UserDefaults
     private let makeAPI: (URL, String) -> ReceiptsAPI
     private let tokenProvider: () -> String?
@@ -48,10 +51,13 @@ final class SyncCoordinator: ObservableObject {
     static let maxBackoff: TimeInterval = 15 * 60
 
     init(store: SyncStore, defaults: UserDefaults = .standard, fileSystem: ArchiveFileSystem = DiskFileSystem(),
+         capabilities: SyncCapabilities = .archiveDevice, deviceId: String = "macbook-archive",
          reminders: ReminderScheduling = NoReminders(),
          tokenProvider: @escaping () -> String? = { KeychainStore.read(.receiptsAPIToken) },
          makeAPI: @escaping (URL, String) -> ReceiptsAPI = { URLSessionReceiptsAPI(baseURL: $0, token: $1) }) {
         self.store = store
+        self.capabilities = capabilities
+        self.deviceId = deviceId
         self.defaults = defaults
         self.fileSystem = fileSystem
         self.reminders = reminders
@@ -74,17 +80,24 @@ final class SyncCoordinator: ObservableObject {
         }
     }
 
-    /// Banner texts: the server's archive/disk flags and the 30 day reminder.
+    /// Banner texts: the server's archive/disk flags and (archive device only) the 30 day reminder.
     var banners: [String] {
         var out: [String] = []
         if let s = serverStatus {
             if s.archiveOverdue {
                 let mb = max(1, s.unarchivedBytes / 1_000_000)
-                out.append("\(s.unarchivedCount) receipt photo(s) (\(mb) MB) wait on the server and have not been archived for over \(s.archiveReminderDays ?? 30) days. Sync archives them on this Mac.")
+                let days = s.archiveReminderDays ?? 30
+                if capabilities.archivesPhotos {
+                    out.append("\(s.unarchivedCount) receipt photo(s) (\(mb) MB) wait on the server and have not been archived for over \(days) days. Sync archives them on this Mac.")
+                } else {
+                    out.append("\(s.unarchivedCount) receipt photo(s) (\(mb) MB) wait on the server and have not been archived for over \(days) days. Open Receipts on your laptop to archive them.")
+                }
             }
             if s.diskWarning {
                 let free = s.diskFreeBytes.map { String(format: "%.1f GB", Double($0) / 1e9) } ?? "little"
-                out.append("The server is low on disk space (\(free) free). Archive its photos with Sync now.")
+                out.append("The server is low on disk space (\(free) free). " + (capabilities.archivesPhotos
+                    ? "Archive its photos with Sync now."
+                    : "Archive its photos on your laptop."))
             }
         }
         if let staleSyncWarning { out.append(staleSyncWarning) }
@@ -112,7 +125,7 @@ final class SyncCoordinator: ObservableObject {
             return
         }
         if changed || engine == nil {
-            let config = SyncConfig(cursorKey: ServerURL.cursorKey(apiBase: base))
+            let config = SyncConfig(deviceId: deviceId, cursorKey: ServerURL.cursorKey(apiBase: base), capabilities: capabilities)
             engine = SyncEngine(api: makeAPI(base, token), store: store, config: config, fileSystem: fileSystem)
             failures = 0
         }
@@ -151,6 +164,12 @@ final class SyncCoordinator: ObservableObject {
         let pending = (try? await store.unsentChangeCount()) ?? 0
         unsentChanges = pending
         if pending > 0 { noteLocalChange() }
+    }
+
+    /// The app came to the foreground: sync unless a run finished in the last `minInterval` seconds.
+    func syncIfStale(minInterval: TimeInterval = 20) async {
+        if let lastReport, Date().timeIntervalSince(lastReport.finishedAt) < minInterval, lastReport.succeeded { return }
+        await syncNow()
     }
 
     func syncNow() async {
@@ -215,7 +234,9 @@ final class SyncCoordinator: ObservableObject {
     }
 
     /// The user gave up on a failed receipt: its photo may be archived (and then leaves the server).
+    /// Only the archive device may; elsewhere this does nothing (`accept_failed` is never sent by the phone).
     func acceptFailedAndArchive(localID: Int) async {
+        guard capabilities.archivesPhotos else { return }
         try? await store.setAcceptFailed(localID: localID, true)
         await syncNow()
     }
@@ -243,6 +264,21 @@ final class SyncCoordinator: ObservableObject {
         }
     }
 
+    // MARK: - Cached photos (phone)
+
+    /// A cached copy of the receipt's photo, downloading it if the server still holds it.
+    func ensurePhoto(uuid: String) async -> SyncEngine.PhotoFetchResult {
+        guard let engine else { return .unavailable("Cloud sync is not set up.") }
+        return await engine.ensurePhoto(uuid: uuid)
+    }
+
+    func clearPhotoCache() async {
+        await engine?.clearPhotoCache()
+        PhotoCache(dir: store.paths.photoCacheDir, maxBytes: 0).removeAll()
+    }
+
+    var photoCacheBytes: Int { PhotoCache(dir: store.paths.photoCacheDir, maxBytes: capabilities.photoCacheBytes).totalBytes }
+
     // MARK: - Last sync, reminder
 
     private func loadLastSync() async {
@@ -250,7 +286,7 @@ final class SyncCoordinator: ObservableObject {
     }
 
     private func refreshStaleness() {
-        guard settings.enabled else { staleSyncWarning = nil; return }
+        guard settings.enabled, capabilities.archivesPhotos else { staleSyncWarning = nil; return }
         if SyncReminder.isOverdue(lastSync: lastSyncAt, enabledSince: SyncSettings.enabledSince(in: defaults)) {
             staleSyncWarning = "This Mac has not synced for \(SyncReminder.days) days. Receipt photos pile up on the server until it does."
         } else {
@@ -259,7 +295,7 @@ final class SyncCoordinator: ObservableObject {
     }
 
     private func scheduleReminder() {
-        guard settings.enabled, let due = SyncReminder.dueDate(lastSync: lastSyncAt, enabledSince: SyncSettings.enabledSince(in: defaults)) else {
+        guard settings.enabled, capabilities.archivesPhotos, let due = SyncReminder.dueDate(lastSync: lastSyncAt, enabledSince: SyncSettings.enabledSince(in: defaults)) else {
             reminders.cancel()
             return
         }

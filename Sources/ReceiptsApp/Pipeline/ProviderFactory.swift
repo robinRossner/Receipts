@@ -10,6 +10,7 @@ struct PipelineServices: Sendable {
     let debugDump: Bool
 }
 
+#if os(macOS)
 enum ProviderFactory {
     /// One backend, as all three roles. A new backend only needs a case here (see LLMBackend).
     private struct Backend {
@@ -71,3 +72,30 @@ enum ProviderFactory {
         )
     }
 }
+#else
+/// The iPhone app has no AI of its own: the server reads receipts. These providers exist only so the shared
+/// code (which can add a manual line item) compiles; they never reach a model. A new item gets the
+/// "Other > Miscellaneous" category flagged for review (an empty answer), which the user can change by hand.
+struct CloudOnlyProvider: ReceiptExtractionProvider, ItemClassificationProvider, LLMProviderHealth {
+    var id: String { "cloud-only" }
+
+    func extractReceipt(jpeg: Data, prompt: String, schema: JSONSchema, maxOutputTokens: Int) async throws -> LLMResponse {
+        throw LLMProviderError.allProvidersFailed(["Receipts are read by the server on the iPhone"])
+    }
+
+    func classify(prompt: String, schema: JSONSchema, maxOutputTokens: Int) async throws -> LLMResponse {
+        LLMResponse(text: "{}", providerId: id)
+    }
+
+    func readiness() async -> ProviderStatus { .ready }
+}
+
+enum ProviderFactory {
+    static func backendChain(for settings: LLMSettings) -> [LLMBackend] { [] }
+
+    static func makeServices(settings: LLMSettings, env: AppEnvironment) -> PipelineServices {
+        let provider = CloudOnlyProvider()
+        return PipelineServices(extraction: provider, classification: provider, health: provider, debugDump: false)
+    }
+}
+#endif

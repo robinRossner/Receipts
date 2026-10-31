@@ -58,7 +58,7 @@ struct LLMSettings: Sendable, Equatable {
 
     static let defaults = LLMSettings(
         backend: .ollama,
-        ollamaEndpoint: OllamaClient.defaultBaseURL.absoluteString,
+        ollamaEndpoint: "http://127.0.0.1:11434",   // OllamaClient.defaultBaseURL (not compiled into the iPhone app)
         ollamaVisionModel: "qwen2.5vl:7b",
         ollamaTextModel: "qwen2.5:7b-instruct",
         // Plain JSON mode is what extraction quality was tuned on; schema-constrained output is opt-in.

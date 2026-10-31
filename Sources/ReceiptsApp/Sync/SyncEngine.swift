@@ -1,14 +1,16 @@
 import Foundation
 
 struct SyncConfig: Sendable {
-    /// What this Mac calls itself on the archive endpoints and in push (contract: `macbook-archive`).
+    /// What this device calls itself on the archive endpoints and in push (the Mac: `macbook-archive`).
     var deviceId = "macbook-archive"
     /// Cursor key, one per server (cursors are global to the server's database).
     var cursorKey: String
     var pageLimit = 2000
     var pushChunk = 400
-    /// This device is the photo archive: after every sync it runs the archive protocol.
-    var isArchiveDevice = true
+    /// What this device may do. Only the archive device (the Mac) runs the archive protocol after every sync; the
+    /// engine cannot call the archive endpoints without it (see `SyncCapabilities`).
+    var capabilities = SyncCapabilities.archiveDevice
+    var isArchiveDevice: Bool { capabilities.archivesPhotos }
     static let maxPages = 500
 }
 
@@ -40,9 +42,11 @@ struct SyncReport: Sendable {
 /// after a pulled page was applied. Every phase may fail on its own (the failure is reported, the rest still runs
 /// unless the server itself is unreachable); nothing is lost, the next run repeats what failed.
 actor SyncEngine {
+    /// Always the capability-guarded wrapper: a device that is not the archive cannot reach the archive endpoints.
     let api: ReceiptsAPI
     let store: SyncStore
     let config: SyncConfig
+    let photoCache: PhotoCache
     private let archiver: PhotoArchiver
     private var current: Task<SyncReport, Never>?
     /// A push answered `stale` for a record we thought was ahead: the server holds something newer that may sit
@@ -50,10 +54,12 @@ actor SyncEngine {
     private var needsFullPull = false
 
     init(api: ReceiptsAPI, store: SyncStore, config: SyncConfig, fileSystem: ArchiveFileSystem = DiskFileSystem()) {
-        self.api = api
+        let guarded = CapabilityGuardedAPI(base: api, capabilities: config.capabilities)
+        self.api = guarded
         self.store = store
         self.config = config
-        self.archiver = PhotoArchiver(api: api, store: store, fileSystem: fileSystem, deviceId: config.deviceId)
+        self.photoCache = PhotoCache(dir: store.paths.photoCacheDir, maxBytes: config.capabilities.photoCacheBytes)
+        self.archiver = PhotoArchiver(api: guarded, store: store, fileSystem: fileSystem, deviceId: config.deviceId)
     }
 
     /// One full run. Calls made while a run is in progress join it.
@@ -116,6 +122,7 @@ actor SyncEngine {
             let response = try await api.uploadPhoto(id: pending.uuid, data: data, mediaType: PhotoPreparer.mediaType(of: data),
                                                      createdAt: SyncDate.parse(pending.createdAt))
             try await store.markUploaded(uuid: pending.uuid, server: response.receipt)
+            await keepCachedCopy(of: pending, mediaType: PhotoPreparer.mediaType(of: data))
             report.uploaded += 1
         } catch let error as ReceiptsAPIError {
             if error.code == "duplicate_image", let existing = error.extra["duplicate_of"] {
@@ -131,6 +138,14 @@ actor SyncEngine {
                 try await store.markUploadFailed(uuid: pending.uuid, message: error.localizedDescription, permanent: true)
             }
         }
+    }
+
+    /// A phone keeps the photo it just uploaded as its (bounded) cached copy instead of deleting it. Best effort: the
+    /// upload itself is done, so a failure here only means the photo is downloaded again when it is opened.
+    private func keepCachedCopy(of pending: PendingUpload, mediaType: String) async {
+        guard config.capabilities.cachesPhotos, let source = store.paths.resolve(pending.photoPath),
+              let cached = try? photoCache.adopt(source, uuid: pending.uuid, mediaType: mediaType) else { return }
+        try? await store.setLocalPhoto(uuid: pending.uuid, path: store.paths.stored(cached))
     }
 
     /// The server's answer to one upload outside a full run (the upload queue UI), same handling.
@@ -216,7 +231,55 @@ actor SyncEngine {
     }
 
     /// Runs just the archive protocol (after the user chose to give up on a failed receipt, whose photo may then go).
+    /// Only the archive device may; anything else gets `notPermitted` without a request.
     func archiveNow() async throws -> ArchiveReport {
-        try await archiver.run()
+        guard config.capabilities.archivesPhotos else {
+            throw ReceiptsAPIError.notPermitted("This device is not the photo archive.")
+        }
+        return try await archiver.run()
+    }
+
+    // MARK: - Photos on the phone
+
+    enum PhotoFetchResult: Equatable, Sendable {
+        /// The photo is in the local cache (stored path, relative to the app-support dir).
+        case cached(String)
+        /// The server released its copy to the laptop and there is no copy here.
+        case onLaptop
+        case unavailable(String)
+    }
+
+    /// Makes sure a cached copy of a receipt's photo exists: downloads it from the server when the server still holds
+    /// it. A photo that was archived (410) and is not here is "on your laptop". The checksum must equal the
+    /// server's `photo_sha256`, else nothing is kept.
+    func ensurePhoto(uuid: String) async -> PhotoFetchResult {
+        guard config.capabilities.cachesPhotos else { return .unavailable("This device does not keep photo copies.") }
+        do {
+            guard let info = try await store.archiveInfo(uuid: uuid) else { return .unavailable("Unknown receipt.") }
+            if let url = store.paths.resolve(info.sourceImage), FileManager.default.fileExists(atPath: url.path) {
+                return .cached(info.sourceImage ?? "")
+            }
+            if info.photoLocation == "archived" { return .onLaptop }
+            if info.photoLocation != "server" { return .unavailable("This receipt has no photo.") }
+            let download: DownloadedPhoto
+            do {
+                download = try await api.downloadPhoto(path: "\(ServerURL.apiPath)/\(uuid)/photo")
+            } catch let error as ReceiptsAPIError where error.code == "photo_archived" {
+                return .onLaptop
+            }
+            if let expected = try await store.photoSHA256(uuid: uuid), Sha256.hex(download.data) != expected.lowercased() {
+                return .unavailable("The downloaded photo did not match the server's checksum.")
+            }
+            let url = try photoCache.write(download.data, uuid: uuid, mediaType: download.mediaType)
+            try await store.setLocalPhoto(uuid: uuid, path: store.paths.stored(url))
+            return .cached(store.paths.stored(url))
+        } catch {
+            return .unavailable(error.localizedDescription)
+        }
+    }
+
+    /// "Clear cached photos": removes the local copies (receipts keep their data).
+    func clearPhotoCache() {
+        photoCache.removeAll()
     }
 }

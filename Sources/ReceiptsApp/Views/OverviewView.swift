@@ -32,6 +32,12 @@ struct OverviewView: View {
     @State private var groupDetails: [String: ItemGroupDetail] = [:]
     @State private var loadingGroups: Set<String> = []
 
+    #if os(macOS)
+    private let contentPadding: CGFloat = 40
+    #else
+    private let contentPadding: CGFloat = 16
+    #endif
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -45,7 +51,7 @@ struct OverviewView: View {
                 )
                 categoryTree
             }
-            .padding(40)
+            .padding(contentPadding)
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
         }
@@ -82,6 +88,7 @@ struct OverviewView: View {
                     Text("All time").font(AppTheme.display(17))
                 }
                 navButton("⟳") { store.invalidateStatsCache(); Task { await load() } }
+                #if os(macOS)
                 Button {
                     store.exportSheetPresented = true
                 } label: {
@@ -89,6 +96,7 @@ struct OverviewView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(AppTheme.inkSoft)
+                #endif
             }
         }
         .onChange(of: mode) { Task { await load() } }
@@ -287,7 +295,7 @@ struct OverviewView: View {
                         ForEach(detail.purchases) { purchaseRow($0) }
                     }
                     .padding(10)
-                    .background(Color.white)
+                    .background(AppTheme.card)
                     .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(AppTheme.rule, style: StrokeStyle(lineWidth: 1, dash: [4])))
                 }
             }

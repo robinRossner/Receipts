@@ -1,5 +1,11 @@
-import AppKit
+import Combine
 import Foundation
+
+/// Top-level tab of the Mac window (the iPhone app has its own tab bar).
+enum AppPage {
+    case review
+    case overview
+}
 
 /// Ports every endpoint from api.py into plain async methods that SwiftUI views call directly -
 /// no HTTP, no JSON serialization boundary, no CORS, since there's no separate server process
@@ -51,7 +57,11 @@ final class ReceiptStore: ObservableObject {
     /// Overview's current range (set by OverviewView) so File > Export… can offer "current range".
     @Published var overviewRange: (start: String?, end: String?, label: String) = (nil, nil, "All time")
     @Published var exportSheetPresented = false
+    #if os(macOS)
     @Published var lastBackupDate: Date? = BackupService.lastBackupDate
+    #endif
+    /// Why a receipt's photo cannot be shown right now (phone: the download failed), by local receipt id.
+    @Published var photoFetchNotes: [Int: String] = [:]
     /// Stats query results, dropped whenever data changes (see invalidateStatsCache).
     var statsCache: [String: Any] = [:]
     func invalidateStatsCache() { statsCache.removeAll() }
@@ -76,13 +86,19 @@ final class ReceiptStore: ObservableObject {
         highlightRequest = HighlightRequest(receiptId: receiptId, itemDictionaryId: itemDictionaryId, token: UUID())
     }
 
-    init(env: AppEnvironment, db: Database, taxonomy: Taxonomy, settings: LLMSettings = .load()) {
+    /// `capabilities` says which device this is: the default (Mac) archives photos; the iPhone passes `.mobile`.
+    init(env: AppEnvironment, db: Database, taxonomy: Taxonomy, settings: LLMSettings = .load(),
+         capabilities: SyncCapabilities = .archiveDevice, deviceId: String = "macbook-archive",
+         reminders: ReminderScheduling? = nil) {
         self.env = env
         self.db = db
         self.taxonomy = taxonomy
         self.settings = settings
         self.services = ProviderFactory.makeServices(settings: settings, env: env)
-        self.sync = SyncCoordinator(store: SyncStore(db: db, paths: env.syncPaths), reminders: UserNotificationReminder())
+        self.sync = SyncCoordinator(
+            store: SyncStore(db: db, paths: env.syncPaths), capabilities: capabilities, deviceId: deviceId,
+            reminders: reminders ?? (capabilities.archivesPhotos ? UserNotificationReminder() : NoReminders())
+        )
     }
 
     func report(_ action: String, _ error: Error) {
@@ -279,13 +295,21 @@ final class ReceiptStore: ObservableObject {
             items: items,
             uuid: row.string(10), processing: ReceiptProcessing(status: row.string(12), error: row.string(13)),
             photoLocation: row.string(11),
-            photoNote: imageExists ? nil : Self.photoNote(location: row.string(11), hasPath: imagePath != nil)
+            photoNote: imageExists ? nil : Self.photoNote(location: row.string(11), hasPath: imagePath != nil, onArchiveDevice: sync.capabilities.archivesPhotos)
         )
     }
 
     /// Why a receipt has no photo to show. nil for the plain "file not found" of a local-only receipt (the photo view
     /// then names the path, as before sync existed).
-    static func photoNote(location: String?, hasPath: Bool) -> String? {
+    static func photoNote(location: String?, hasPath: Bool, onArchiveDevice: Bool = true) -> String? {
+        if !onArchiveDevice {
+            // The phone: the laptop is the archive. A photo the server still holds is downloaded on demand.
+            switch location {
+            case "archived": return "This photo is on your laptop."
+            case "server": return "Loading the photo from the server…"
+            default: return hasPath ? nil : "This receipt has no photo."
+            }
+        }
         switch location {
         case "server": return "This photo is still on the server. It is saved on this Mac, the photo archive, at the next sync."
         case "archived": return "This photo is archived on this Mac, but its file is missing here. It may have been moved or deleted."
@@ -308,10 +332,14 @@ final class ReceiptStore: ObservableObject {
 
     /// Adds files (and the image files directly inside any folders) to the queue and starts
     /// processing. Safe to call while a batch is running; new jobs just join the queue.
-    func upload(fileURLs: [URL]) {
+    func upload(fileURLs: [URL], preStraightened: Bool = false) {
         let (supported, unsupported) = UploadInput.expand(fileURLs)
         var added: [UploadJob] = []
-        for url in supported { added.append(UploadJob(fileURL: url)) }
+        for url in supported {
+            var job = UploadJob(fileURL: url)
+            job.preStraightened = preStraightened
+            added.append(job)
+        }
         for url in unsupported {
             var job = UploadJob(fileURL: url)
             job.state = .failed("Unsupported file type (\(url.pathExtension.isEmpty ? "no extension" : url.pathExtension.lowercased()))")
@@ -328,7 +356,7 @@ final class ReceiptStore: ObservableObject {
         pumpUploadQueue()
     }
 
-    private func setThumbnail(_ image: NSImage?, for id: UUID) {
+    private func setThumbnail(_ image: PlatformImage?, for id: UUID) {
         guard let i = uploadQueue.firstIndex(where: { $0.id == id }) else { return }
         uploadQueue[i].thumbnail = image
     }
@@ -340,7 +368,7 @@ final class ReceiptStore: ObservableObject {
 
     /// Starts queued jobs until the concurrency limit is reached.
     private func pumpUploadQueue() {
-        let limit = sync.isEnabled ? 3 : Self.maxConcurrentUploads(for: settings)   // cloud: the server queues the extraction
+        let limit = sync.isEnabled || sync.capabilities.cachesPhotos ? 3 : Self.maxConcurrentUploads(for: settings)   // cloud: the server queues the extraction
         while uploadTasks.count < limit, let job = uploadQueue.first(where: { $0.state == .queued && uploadTasks[$0.id] == nil }) {
             let id = job.id
             setState(.scanning, for: id)
@@ -414,7 +442,8 @@ final class ReceiptStore: ObservableObject {
     /// in a detached task rather than inline: this store is @MainActor and that CPU-bound work
     /// would otherwise freeze the UI. Cancelling the job's Task is forwarded to that detached task.
     private func runUploadJob(id: UUID) async {
-        if sync.isEnabled { await runCloudUploadJob(id: id); return }   // straighten here, the server reads the receipt
+        // Cloud: straighten here, the server reads the receipt. The phone has no other way (its AI is the server).
+        if sync.isEnabled || sync.capabilities.cachesPhotos { await runCloudUploadJob(id: id); return }
         guard let fileURL = uploadQueue.first(where: { $0.id == id })?.fileURL else { return }
         let ext = fileURL.pathExtension.isEmpty ? "jpg" : fileURL.pathExtension
         let stagingDir = env.appSupportDir.appendingPathComponent("uploads_incoming", isDirectory: true)

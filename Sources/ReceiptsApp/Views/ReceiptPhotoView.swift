@@ -1,32 +1,29 @@
 import SwiftUI
-import AppKit
 import ImageIO
+#if os(macOS)
+import AppKit
+#endif
 
 /// Decodes archived receipt photos off the main thread and keeps them in memory. Images are
 /// downsampled to `maxPixel` on the long edge so a 12 MP photo doesn't sit in memory at full size.
 final class ReceiptImageCache: @unchecked Sendable {
     static let shared = ReceiptImageCache()
-    private let cache = NSCache<NSString, NSImage>()
+    private let cache = NSCache<NSString, PlatformImage>()
     private let maxPixel = 4096
 
     init() { cache.countLimit = 12 }
 
-    func cached(_ path: String) -> NSImage? { cache.object(forKey: path as NSString) }
+    /// Forgets decoded images (e.g. after the file cache was cleared).
+    func removeAll() { cache.removeAllObjects() }
+
+    func cached(_ path: String) -> PlatformImage? { cache.object(forKey: path as NSString) }
 
     /// nil when the file is missing or isn't a decodable image.
-    func load(_ path: String) async -> NSImage? {
+    func load(_ path: String) async -> PlatformImage? {
         if let hit = cached(path) { return hit }
         let maxPixel = maxPixel
-        let image: NSImage? = await Task.detached(priority: .userInitiated) {
-            let url = URL(fileURLWithPath: path)
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,   // honour EXIF orientation
-                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-            ]
-            guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-            return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        let image: PlatformImage? = await Task.detached(priority: .userInitiated) {
+            ImageDecoding.thumbnail(at: URL(fileURLWithPath: path), maxPixel: maxPixel)
         }.value
         if let image { cache.setObject(image, forKey: path as NSString) }
         return image
@@ -40,7 +37,7 @@ struct ReceiptPhotoView: View {
     /// Why there is no photo to show (still on the server, missing here, none); replaces the generic "not found".
     var note: String?
 
-    private enum LoadState { case loading, loaded(NSImage), missing }
+    private enum LoadState { case loading, loaded(PlatformImage), missing }
     @State private var state: LoadState = .loading
     /// Magnification relative to "fit in pane" (1 = fit).
     @State private var zoom: CGFloat = 1
@@ -55,7 +52,7 @@ struct ReceiptPhotoView: View {
             content
         }
         .background(AppTheme.desk)
-        .task(id: path) {
+        .task(id: "\(path ?? "")|\(note ?? "")") {
             zoom = 1
             guard let path else { state = .missing; return }
             if let hit = ReceiptImageCache.shared.cached(path) { state = .loaded(hit); return }
@@ -82,8 +79,10 @@ struct ReceiptPhotoView: View {
                 .help("Show at actual pixel size")
             Button { zoom = min(maxZoom, zoom * 1.25) } label: { Image(systemName: "plus.magnifyingglass") }
                 .help("Zoom in")
+            #if os(macOS)
             Button { openInPreview() } label: { Image(systemName: "arrow.up.forward.app") }
                 .help("Open in Preview")
+            #endif
         }
         .buttonStyle(.borderless)
         .font(AppTheme.body(12))
@@ -101,8 +100,8 @@ struct ReceiptPhotoView: View {
     @State private var paneSize: CGSize = .zero
     private var actualSizeZoom: CGFloat {
         guard case .loaded(let image) = state, paneSize.width > 0, paneSize.height > 0 else { return 1 }
-        let fit = fitSize(for: image.size, in: paneSize)
-        return min(maxZoom, max(1, image.size.width / max(fit.width, 1)))
+        let fit = fitSize(for: image.pixelSize, in: paneSize)
+        return min(maxZoom, max(1, image.pixelSize.width / max(fit.width, 1)))
     }
 
     private func fitSize(for image: CGSize, in pane: CGSize) -> CGSize {
@@ -135,17 +134,19 @@ struct ReceiptPhotoView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .loaded(let image):
             GeometryReader { geo in
-                let fit = fitSize(for: image.size, in: geo.size)
+                let fit = fitSize(for: image.pixelSize, in: geo.size)
                 let size = CGSize(width: fit.width * zoom, height: fit.height * zoom)
                 ScrollView([.horizontal, .vertical]) {
-                    Image(nsImage: image)
+                    Image(platformImage: image)
                         .resizable()
                         .interpolation(.high)
                         .frame(width: size.width, height: size.height)
                         .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
                         .frame(minWidth: geo.size.width, minHeight: geo.size.height)
+                        #if os(macOS)
                         .onTapGesture { openInPreview() }
                         .help("Click to open in Preview")
+                        #endif
                 }
                 .gesture(
                     MagnifyGesture()
@@ -162,6 +163,7 @@ struct ReceiptPhotoView: View {
         }
     }
 
+    #if os(macOS)
     private func openInPreview() {
         guard let path else { return }
         let url = URL(fileURLWithPath: path)
@@ -171,4 +173,5 @@ struct ReceiptPhotoView: View {
             NSWorkspace.shared.open(url)
         }
     }
+    #endif
 }

@@ -6,6 +6,8 @@ enum ReceiptsAPIError: Error, LocalizedError, Equatable {
     case transport(String)
     case invalidResponse(String)
     case notConfigured(String)
+    /// The calling device lacks a capability (the iPhone is not the photo archive); never sent to the server.
+    case notPermitted(String)
 
     var code: String? { if case .http(_, let c, _, _) = self { return c }; return nil }
     var status: Int? { if case .http(let s, _, _, _) = self { return s }; return nil }
@@ -18,7 +20,7 @@ enum ReceiptsAPIError: Error, LocalizedError, Equatable {
         switch self {
         case .transport: return true
         case .http(let status, _, _, _): return status >= 500 || status == 429 || status == 408
-        case .invalidResponse, .notConfigured: return false
+        case .invalidResponse, .notConfigured, .notPermitted: return false
         }
     }
 
@@ -27,7 +29,7 @@ enum ReceiptsAPIError: Error, LocalizedError, Equatable {
         switch self {
         case .transport, .notConfigured: return true
         case .http(let status, _, _, _): return status == 401 || status == 429 || status >= 500
-        case .invalidResponse: return false
+        case .invalidResponse, .notPermitted: return false
         }
     }
 
@@ -35,7 +37,7 @@ enum ReceiptsAPIError: Error, LocalizedError, Equatable {
         switch self {
         case .transport(let m): return "Server not reachable (\(m))"
         case .invalidResponse(let m): return "Unexpected answer from the server (\(m))"
-        case .notConfigured(let m): return m
+        case .notConfigured(let m), .notPermitted(let m): return m
         case .http(let status, let code, let message, _):
             switch status {
             case 401: return "The server rejected the token (401). Check the receipts token in Settings."
@@ -66,7 +68,36 @@ protocol ReceiptsAPI: Sendable {
 enum ServerURL {
     static let apiPath = "/api/v1/receipts"
 
-    static func apiBase(from input: String) -> URL? {
+    /// Which plain-HTTP (non-TLS) servers are accepted. The iPhone app talks HTTPS only; plain HTTP to the machine
+    /// itself is allowed in Debug builds only (a backend on the Mac while testing). The Mac app keeps accepting
+    /// any host (a server on the home network).
+    enum PlainHTTPPolicy: Sendable { case anyHost, debugLoopbackOnly }
+
+    #if os(iOS)
+    static let defaultPolicy: PlainHTTPPolicy = .debugLoopbackOnly
+    #else
+    static let defaultPolicy: PlainHTTPPolicy = .anyHost
+    #endif
+
+    #if DEBUG
+    static let isDebugBuild = true
+    #else
+    static let isDebugBuild = false
+    #endif
+
+    static func isLoopback(host: String) -> Bool {
+        ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased())
+    }
+
+    static func isAllowed(_ url: URL, policy: PlainHTTPPolicy, debugBuild: Bool = isDebugBuild) -> Bool {
+        guard url.scheme == "http" else { return true }
+        switch policy {
+        case .anyHost: return true
+        case .debugLoopbackOnly: return debugBuild && isLoopback(host: url.host ?? "")
+        }
+    }
+
+    static func apiBase(from input: String, policy: PlainHTTPPolicy = defaultPolicy, debugBuild: Bool = isDebugBuild) -> URL? {
         var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         if !text.contains("://") {
@@ -75,7 +106,8 @@ enum ServerURL {
         }
         while text.hasSuffix("/") { text.removeLast() }
         if !text.hasSuffix(apiPath) { text += apiPath }
-        guard let url = URL(string: text), let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != nil else { return nil }
+        guard let url = URL(string: text), let scheme = url.scheme, ["http", "https"].contains(scheme), url.host != nil,
+              isAllowed(url, policy: policy, debugBuild: debugBuild) else { return nil }
         return url
     }
 

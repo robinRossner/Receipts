@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import ImageIO
 
@@ -38,10 +37,12 @@ struct UploadJob: Identifiable {
     let id = UUID()
     let fileURL: URL
     var fileName: String { fileURL.lastPathComponent }
-    var thumbnail: NSImage?
+    var thumbnail: PlatformImage?
     var state: State = .queued
     /// Set once the photo is prepared and stored for upload: a retry then repeats only the upload.
     var cloudReceiptUUID: String?
+    /// The page was already straightened (the phone's document camera): skip the document search.
+    var preStraightened = false
 }
 
 enum UploadInput {
@@ -76,16 +77,9 @@ enum UploadInput {
     }
 
     /// Small preview for a queue row; nil if the file can't be decoded.
-    static func thumbnail(for url: URL, maxPixels: Int = 64) -> NSImage? {
+    static func thumbnail(for url: URL, maxPixels: Int = 64) -> PlatformImage? {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
-        ]
-        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        return ImageDecoding.thumbnail(at: url, maxPixel: maxPixels)
     }
 }
