@@ -22,6 +22,7 @@ final class FakeReceiptsServer: ReceiptsAPI, @unchecked Sendable {
     var pushLog: [PushRequest] = []
     var confirmCalls: [(id: String, sha256: String, deviceId: String, acceptFailed: Bool)] = []
     var archiveSyncCalls = 0
+    var archivePendingCalls = 0
     var downloadCalls = 0
     var uploadCalls: [String] = []
     var pullSinceLog: [String?] = []
@@ -154,7 +155,8 @@ final class FakeReceiptsServer: ReceiptsAPI, @unchecked Sendable {
 
     func archivePending() async throws -> [ArchivePendingPhoto] {
         try guarded("archivePending") {
-            receipts.values.filter { $0.photoLocation == "server" }.sorted { $0.id < $1.id }.map { r in
+            archivePendingCalls += 1
+            return receipts.values.filter { $0.photoLocation == "server" }.sorted { $0.id < $1.id }.map { r in
                 let status = r.extractionStatus ?? "queued"
                 return ArchivePendingPhoto(
                     id: r.id, sha256: r.photoSha256 ?? "", bytes: r.photoBytes, mediaType: "image/jpeg", uploadedAt: r.createdAt,

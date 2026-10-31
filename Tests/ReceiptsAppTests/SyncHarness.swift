@@ -11,7 +11,8 @@ final class SyncHarness {
     let server: FakeReceiptsServer
     let engine: SyncEngine
 
-    init(legacy: Bool = false, fileSystem: ArchiveFileSystem = DiskFileSystem(), server: FakeReceiptsServer = FakeReceiptsServer()) throws {
+    init(legacy: Bool = false, fileSystem: ArchiveFileSystem = DiskFileSystem(), server: FakeReceiptsServer = FakeReceiptsServer(),
+         capabilities: SyncCapabilities = .archiveDevice, deviceId: String = "macbook-archive") throws {
         dir = try makeTempDir()
         if legacy { try LegacyDB.create(at: dir.appendingPathComponent("receipts.db").path, LegacyDB.populateSample) }
         db = try openTempDatabase(in: dir)
@@ -20,7 +21,7 @@ final class SyncHarness {
         paths = SyncPaths(appSupportDir: dir, archiveDir: archive)
         store = SyncStore(db: db, paths: paths)
         self.server = server
-        engine = SyncEngine(api: server, store: store, config: SyncConfig(cursorKey: "cursor:test"), fileSystem: fileSystem)
+        engine = SyncEngine(api: server, store: store, config: SyncConfig(deviceId: deviceId, cursorKey: "cursor:test", capabilities: capabilities), fileSystem: fileSystem)
     }
 
     deinit { try? FileManager.default.removeItem(at: dir) }
