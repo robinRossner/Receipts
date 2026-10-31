@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A receipt: paper strip with a zigzag bottom edge and three ink lines. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,22 L78,22 L78,84 L72,79 L66,84 L60,79 L54,84 L48,79 L42,84 L36,79 L30,84 Z" />
+    <path
+        android:fillColor="#2B2823"
+        android:pathData="M37,32 L71,32 L71,35 L37,35 Z M37,42 L62,42 L62,45 L37,45 Z M37,52 L71,52 L71,55 L37,55 Z M37,62 L55,62 L55,65 L37,65 Z" />
+    <path
+        android:fillColor="#B33A3A"
+        android:pathData="M58,60 L71,60 L71,67 L58,67 Z" />
+</vector>

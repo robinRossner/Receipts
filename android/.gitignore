@@ -1,0 +1,13 @@
+# Never commit: machine paths, signing material
+local.properties
+keystore.properties
+*.jks
+*.keystore
+.gradle/
+build/
+app/build/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
