@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Secrets for the Claude backends (API key, `claude setup-token` token) live in the macOS
+/// Secrets (Claude API key, `claude setup-token` token, the receipts server token) live in the macOS
 /// Keychain as generic passwords - never in UserDefaults, logs or the debug dump.
 enum KeychainStore {
     static let service = "ReceiptsApp"
@@ -9,6 +9,8 @@ enum KeychainStore {
     enum Account: String {
         case anthropicAPIKey = "anthropic-api-key"
         case claudeOAuthToken = "claude-oauth-token"
+        /// Bearer token of the receipts backend (`RECEIPTS_API_TOKEN`) for cloud sync.
+        case receiptsAPIToken = "receipts-api-token"
     }
 
     private static func baseQuery(_ account: Account) -> [String: Any] {

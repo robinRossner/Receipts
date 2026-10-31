@@ -31,6 +31,7 @@ enum SyncSchema {
                 uuid TEXT NOT NULL,
                 payload TEXT NOT NULL,
                 deleted_at TEXT NOT NULL,
+                pushed INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (entity, uuid)
             )
             """)
@@ -139,8 +140,8 @@ enum SyncSchema {
             CREATE TRIGGER IF NOT EXISTS trg_receipts_sync_delete BEFORE DELETE ON receipts
             WHEN OLD.uuid IS NOT NULL AND \(notApplying)
             BEGIN
-                INSERT OR REPLACE INTO sync_tombstones (entity, uuid, deleted_at, payload) VALUES (
-                    'receipt', OLD.uuid, COALESCE(OLD.deleted_at, \(nowExpr)),
+                INSERT OR REPLACE INTO sync_tombstones (entity, uuid, deleted_at, pushed, payload) VALUES (
+                    'receipt', OLD.uuid, COALESCE(OLD.deleted_at, \(nowExpr)), 0,
                     json_object('id', OLD.uuid, 'store', OLD.store, 'date', OLD.date, 'time', OLD.time,
                         'total', OLD.total, 'computed_sum', OLD.computed_sum, 'needs_review', OLD.needs_review,
                         'review_reasons', OLD.review_reasons, 'reviewed_at', OLD.reviewed_at,
@@ -173,8 +174,8 @@ enum SyncSchema {
             CREATE TRIGGER IF NOT EXISTS trg_line_items_sync_delete BEFORE DELETE ON line_items
             WHEN OLD.uuid IS NOT NULL AND \(notApplying)
             BEGIN
-                INSERT OR REPLACE INTO sync_tombstones (entity, uuid, deleted_at, payload) VALUES (
-                    'line_item', OLD.uuid, \(nowExpr),
+                INSERT OR REPLACE INTO sync_tombstones (entity, uuid, deleted_at, pushed, payload) VALUES (
+                    'line_item', OLD.uuid, \(nowExpr), 0,
                     json_object('id', OLD.uuid,
                         'receipt_id', (SELECT uuid FROM receipts WHERE id = OLD.receipt_id),
                         'item_dictionary_id', (SELECT uuid FROM item_dictionary WHERE id = OLD.item_dictionary_id),
@@ -207,8 +208,8 @@ enum SyncSchema {
             CREATE TRIGGER IF NOT EXISTS trg_item_dictionary_sync_delete BEFORE DELETE ON item_dictionary
             WHEN OLD.uuid IS NOT NULL AND \(notApplying)
             BEGIN
-                INSERT OR REPLACE INTO sync_tombstones (entity, uuid, deleted_at, payload) VALUES (
-                    'dictionary', OLD.uuid, \(nowExpr),
+                INSERT OR REPLACE INTO sync_tombstones (entity, uuid, deleted_at, pushed, payload) VALUES (
+                    'dictionary', OLD.uuid, \(nowExpr), 0,
                     json_object('id', OLD.uuid, 'canonical_name', OLD.canonical_name,
                         'display_name_de', OLD.display_name_de, 'translation_en', OLD.translation_en,
                         'category', OLD.category, 'subcategory', OLD.subcategory, 'item_group', OLD.item_group,
