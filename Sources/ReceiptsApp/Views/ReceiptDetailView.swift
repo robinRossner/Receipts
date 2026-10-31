@@ -40,7 +40,7 @@ struct ReceiptDetailView: View {
         GeometryReader { geo in
             if showPhoto && geo.size.width >= photoMinPaneWidth {
                 HSplitView {
-                    ReceiptPhotoView(path: detail.sourceImage)
+                    ReceiptPhotoView(path: detail.sourceImage, note: detail.photoNote)
                         .frame(minWidth: 220, idealWidth: 340, maxWidth: .infinity)
                     receiptColumn
                         .frame(minWidth: 400, idealWidth: 520, maxWidth: .infinity)
@@ -56,6 +56,9 @@ struct ReceiptDetailView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        if let processing = detail.processing {
+                            ReceiptProcessingPanel(detail: detail, processing: processing)
+                        }
                         header
                         if detail.needsReview && !detail.reviewReasons.isEmpty {
                             warningBanner

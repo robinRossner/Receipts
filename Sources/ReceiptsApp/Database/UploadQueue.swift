@@ -10,7 +10,11 @@ struct UploadJob: Identifiable {
         case extracting
         case categorizing
         case saving
+        /// Cloud sync: the prepared photo is being sent to the server.
+        case uploading
         case done(receiptId: Int)
+        /// Cloud sync: the server has the photo and reads the receipt (it arrives with the next sync).
+        case uploaded(receiptId: Int)
         case duplicate(receiptId: Int)
         case failed(String)
         case cancelled
@@ -18,14 +22,14 @@ struct UploadJob: Identifiable {
         /// Nothing more will happen to this job unless it is retried.
         var isFinished: Bool {
             switch self {
-            case .done, .duplicate, .failed, .cancelled: return true
+            case .done, .uploaded, .duplicate, .failed, .cancelled: return true
             default: return false
             }
         }
 
         var isRunning: Bool {
             switch self {
-            case .scanning, .extracting, .categorizing, .saving: return true
+            case .scanning, .extracting, .categorizing, .saving, .uploading: return true
             default: return false
             }
         }
@@ -36,6 +40,8 @@ struct UploadJob: Identifiable {
     var fileName: String { fileURL.lastPathComponent }
     var thumbnail: NSImage?
     var state: State = .queued
+    /// Set once the photo is prepared and stored for upload: a retry then repeats only the upload.
+    var cloudReceiptUUID: String?
 }
 
 enum UploadInput {

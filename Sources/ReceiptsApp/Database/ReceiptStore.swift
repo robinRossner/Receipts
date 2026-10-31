@@ -12,6 +12,8 @@ final class ReceiptStore: ObservableObject {
     let taxonomy: Taxonomy
     /// LLM providers + pipeline switches, rebuilt from LLMSettings whenever Settings change.
     private(set) var services: PipelineServices
+    /// Cloud sync (off by default): schedules the sync engine and publishes its status for the views.
+    let sync: SyncCoordinator
 
     struct HighlightRequest: Equatable {
         let receiptId: Int
@@ -65,6 +67,7 @@ final class ReceiptStore: ObservableObject {
     /// Receipt ids matching `searchText` (store, item names de/en, amount); nil = no search active.
     @Published private(set) var searchMatches: Set<Int>?
     private var searchTask: Task<Void, Never>?
+    var syncSettingsTask: Task<Void, Never>?
 
     /// Mirrors goToReceiptItem() in dashboard.html: jump to the Review tab, load the receipt,
     /// and let the view scroll to + briefly highlight the matching item group.
@@ -79,6 +82,7 @@ final class ReceiptStore: ObservableObject {
         self.taxonomy = taxonomy
         self.settings = settings
         self.services = ProviderFactory.makeServices(settings: settings, env: env)
+        self.sync = SyncCoordinator(store: SyncStore(db: db, paths: env.syncPaths), reminders: UserNotificationReminder())
     }
 
     func report(_ action: String, _ error: Error) {
@@ -131,6 +135,7 @@ final class ReceiptStore: ObservableObject {
             report("Loading receipts", error)
         }
         await runSearch()
+        await sync.syncIfLocalChangesPending()   // an edit just changed the data: sync soon (no-op with sync off)
     }
 
     // MARK: - Search / filter / selection order
@@ -210,16 +215,19 @@ final class ReceiptStore: ObservableObject {
         await loadReceiptDetail(id: order[target].id)
     }
 
-    private func fetchSummaries(deleted: Bool) async throws -> [ReceiptSummary] {
+    func fetchSummaries(deleted: Bool) async throws -> [ReceiptSummary] {
+        // Receipts still being uploaded / read / failed come first (so a new photo is visible at once), then by date.
+        let pendingFirst = "CASE WHEN extraction_status IN ('pending_upload', 'upload_failed', 'queued', 'processing', 'failed') THEN 0 ELSE 1 END"
         let rows = try await db.query("""
-            SELECT id, store, date, time, total, needs_review, reviewed_at
+            SELECT id, store, date, time, total, needs_review, reviewed_at, extraction_status, extraction_error
             FROM receipts WHERE deleted_at IS \(deleted ? "NOT NULL" : "NULL")
-            ORDER BY \(deleted ? "deleted_at DESC" : "date DESC, id DESC")
+            ORDER BY \(deleted ? "deleted_at DESC" : "\(pendingFirst), date DESC, id DESC")
             """)
         return rows.map { row in
             ReceiptSummary(
                 id: row.int(0) ?? 0, store: row.string(1), date: row.string(2), time: row.string(3),
-                total: row.double(4), needsReview: row.bool(5), reviewedAt: row.string(6)
+                total: row.double(4), needsReview: row.bool(5), reviewedAt: row.string(6),
+                processing: ReceiptProcessing(status: row.string(7), error: row.string(8))
             )
         }
     }
@@ -240,7 +248,8 @@ final class ReceiptStore: ObservableObject {
 
     private func fetchReceiptDetail(id: Int) async throws -> ReceiptDetail? {
         guard let row = try await db.queryOne("""
-            SELECT id, store, date, time, total, computed_sum, needs_review, review_reasons, source_image, reviewed_at
+            SELECT id, store, date, time, total, computed_sum, needs_review, review_reasons, source_image, reviewed_at,
+                   uuid, photo_location, extraction_status, extraction_error
             FROM receipts WHERE id = ? AND deleted_at IS NULL
             """, [.from(id)]) else { return nil }
 
@@ -261,12 +270,27 @@ final class ReceiptStore: ObservableObject {
             )
         }
 
+        let imagePath = env.resolveImagePath(row.string(8))
+        let imageExists = imagePath.map { FileManager.default.fileExists(atPath: $0) } ?? false
         return ReceiptDetail(
             id: row.int(0) ?? 0, store: row.string(1), date: row.string(2), time: row.string(3),
             total: row.double(4), computedSum: row.double(5), needsReview: row.bool(6),
-            reviewReasons: decodeStringArray(row.string(7)), sourceImage: env.resolveImagePath(row.string(8)), reviewedAt: row.string(9),
-            items: items
+            reviewReasons: decodeStringArray(row.string(7)), sourceImage: imagePath, reviewedAt: row.string(9),
+            items: items,
+            uuid: row.string(10), processing: ReceiptProcessing(status: row.string(12), error: row.string(13)),
+            photoLocation: row.string(11),
+            photoNote: imageExists ? nil : Self.photoNote(location: row.string(11), hasPath: imagePath != nil)
         )
+    }
+
+    /// Why a receipt has no photo to show. nil for the plain "file not found" of a local-only receipt (the photo view
+    /// then names the path, as before sync existed).
+    static func photoNote(location: String?, hasPath: Bool) -> String? {
+        switch location {
+        case "server": return "This photo is still on the server. It is saved on this Mac, the photo archive, at the next sync."
+        case "archived": return "This photo is archived on this Mac, but its file is missing here. It may have been moved or deleted."
+        default: return hasPath ? nil : "This receipt has no photo."
+        }
     }
 
     // MARK: - Upload (POST /receipts/upload)
@@ -309,14 +333,14 @@ final class ReceiptStore: ObservableObject {
         uploadQueue[i].thumbnail = image
     }
 
-    private func setState(_ state: UploadJob.State, for id: UUID) {
+    func setState(_ state: UploadJob.State, for id: UUID) {
         guard let i = uploadQueue.firstIndex(where: { $0.id == id }) else { return }
         uploadQueue[i].state = state
     }
 
     /// Starts queued jobs until the concurrency limit is reached.
     private func pumpUploadQueue() {
-        let limit = Self.maxConcurrentUploads(for: settings)
+        let limit = sync.isEnabled ? 3 : Self.maxConcurrentUploads(for: settings)   // cloud: the server queues the extraction
         while uploadTasks.count < limit, let job = uploadQueue.first(where: { $0.state == .queued && uploadTasks[$0.id] == nil }) {
             let id = job.id
             setState(.scanning, for: id)
@@ -360,7 +384,7 @@ final class ReceiptStore: ObservableObject {
     func clearFinishedUploads() {
         uploadQueue.removeAll { job in
             switch job.state {
-            case .done, .duplicate, .cancelled: return true
+            case .done, .uploaded, .duplicate, .cancelled: return true
             default: return false
             }
         }
@@ -370,7 +394,7 @@ final class ReceiptStore: ObservableObject {
     /// duplicate check (SELECT) and insert aren't atomic across jobs, so two identical files in
     /// one batch would both pass the check; serialising per hash makes the second one see the
     /// first's committed row and report "duplicate".
-    private func acquireHash(_ hash: String) async {
+    func acquireHash(_ hash: String) async {
         while inFlightHashes.contains(hash) {
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                 hashWaiters[hash, default: []].append(c)
@@ -379,7 +403,7 @@ final class ReceiptStore: ObservableObject {
         inFlightHashes.insert(hash)
     }
 
-    private func releaseHash(_ hash: String) {
+    func releaseHash(_ hash: String) {
         inFlightHashes.remove(hash)
         let waiters = hashWaiters.removeValue(forKey: hash) ?? []
         waiters.forEach { $0.resume() }
@@ -390,6 +414,7 @@ final class ReceiptStore: ObservableObject {
     /// in a detached task rather than inline: this store is @MainActor and that CPU-bound work
     /// would otherwise freeze the UI. Cancelling the job's Task is forwarded to that detached task.
     private func runUploadJob(id: UUID) async {
+        if sync.isEnabled { await runCloudUploadJob(id: id); return }   // straighten here, the server reads the receipt
         guard let fileURL = uploadQueue.first(where: { $0.id == id })?.fileURL else { return }
         let ext = fileURL.pathExtension.isEmpty ? "jpg" : fileURL.pathExtension
         let stagingDir = env.appSupportDir.appendingPathComponent("uploads_incoming", isDirectory: true)
@@ -527,6 +552,12 @@ final class ReceiptStore: ObservableObject {
     /// line items in one transaction (id kept, reviewed_at cleared).
     func rerunExtraction(id: Int) async {
         guard !busyReceiptIDs.contains(id) else { return }
+        // Cloud sync with the photo still on the server: the server re-reads it (its pipeline, no local AI call).
+        if sync.isEnabled, let row = try? await db.queryOne("SELECT photo_location FROM receipts WHERE id = ?", [.from(id)]),
+           row.string(0) == "server" {
+            await retryServerExtraction(id: id)
+            return
+        }
         busyReceiptIDs.insert(id)
         defer { busyReceiptIDs.remove(id) }
         let db = db, env = env, taxonomy = taxonomy, services = services

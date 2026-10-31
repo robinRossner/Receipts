@@ -37,6 +37,8 @@ final class ReceiptImageCache: @unchecked Sendable {
 /// click to open in Preview, and a placeholder when the file is missing.
 struct ReceiptPhotoView: View {
     let path: String?
+    /// Why there is no photo to show (still on the server, missing here, none); replaces the generic "not found".
+    var note: String?
 
     private enum LoadState { case loading, loaded(NSImage), missing }
     @State private var state: LoadState = .loading
@@ -118,9 +120,10 @@ struct ReceiptPhotoView: View {
             VStack(spacing: 8) {
                 Image(systemName: "photo.badge.exclamationmark")
                     .font(.system(size: 28))
-                Text("Image file not found")
+                Text(note ?? "Image file not found")
                     .font(AppTheme.body(13, weight: .medium))
-                if let path {
+                    .multilineTextAlignment(.center)
+                if note == nil, let path {
                     Text(path)
                         .font(AppTheme.mono(10))
                         .textSelection(.enabled)

@@ -30,6 +30,7 @@ struct ReceiptsApp: App {
                     await store.checkProviderReadiness()
                     await store.refreshList()
                     await store.runAutoBackupIfDue()
+                    store.startSync()   // no-op unless cloud sync is switched on in Settings
                 }
         }
         .windowResizability(.contentSize)
@@ -40,6 +41,8 @@ struct ReceiptsApp: App {
                 Button("Export…") { store.exportSheetPresented = true }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                 Button("Back Up Data…") { Task { await store.backUpNow() } }
+                Button("Sync Now") { store.syncNow() }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
             }
 
             CommandGroup(after: .textEditing) {

@@ -73,6 +73,53 @@
 		00000000000000000021000D /* SyncSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000D /* SyncSettings.swift */; };
 		00000000000000000021000E /* SyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000E /* SyncStore.swift */; };
 		00000000000000000021000F /* UserNotificationReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000F /* UserNotificationReminder.swift */; };
+		000000000000000000210001 /* AtomicFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200001 /* AtomicFile.swift */; };
+		000000000000000000210002 /* LegacyIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200002 /* LegacyIDs.swift */; };
+		000000000000000000210003 /* PhotoArchiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200003 /* PhotoArchiver.swift */; };
+		000000000000000000210004 /* PhotoPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200004 /* PhotoPreparer.swift */; };
+		000000000000000000210005 /* ReceiptsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200005 /* ReceiptsAPI.swift */; };
+		000000000000000000210006 /* Sha256.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200006 /* Sha256.swift */; };
+		000000000000000000210007 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200007 /* SyncCoordinator.swift */; };
+		000000000000000000210008 /* SyncDates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200008 /* SyncDates.swift */; };
+		000000000000000000210009 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200009 /* SyncEngine.swift */; };
+		00000000000000000021000A /* SyncMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000A /* SyncMerge.swift */; };
+		00000000000000000021000B /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000B /* SyncModels.swift */; };
+		00000000000000000021000C /* SyncSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000C /* SyncSchema.swift */; };
+		00000000000000000021000D /* SyncSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000D /* SyncSettings.swift */; };
+		00000000000000000021000E /* SyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000E /* SyncStore.swift */; };
+		00000000000000000021000F /* UserNotificationReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000F /* UserNotificationReminder.swift */; };
+		000000000000000000230001 /* ReceiptStore+Sync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000220001 /* ReceiptStore+Sync.swift */; };
+		000000000000000000230002 /* CloudSyncViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000220002 /* CloudSyncViews.swift */; };
+		000000000000000000210001 /* AtomicFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200001 /* AtomicFile.swift */; };
+		000000000000000000210002 /* LegacyIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200002 /* LegacyIDs.swift */; };
+		000000000000000000210003 /* PhotoArchiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200003 /* PhotoArchiver.swift */; };
+		000000000000000000210004 /* PhotoPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200004 /* PhotoPreparer.swift */; };
+		000000000000000000210005 /* ReceiptsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200005 /* ReceiptsAPI.swift */; };
+		000000000000000000210006 /* Sha256.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200006 /* Sha256.swift */; };
+		000000000000000000210007 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200007 /* SyncCoordinator.swift */; };
+		000000000000000000210008 /* SyncDates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200008 /* SyncDates.swift */; };
+		000000000000000000210009 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200009 /* SyncEngine.swift */; };
+		00000000000000000021000A /* SyncMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000A /* SyncMerge.swift */; };
+		00000000000000000021000B /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000B /* SyncModels.swift */; };
+		00000000000000000021000C /* SyncSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000C /* SyncSchema.swift */; };
+		00000000000000000021000D /* SyncSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000D /* SyncSettings.swift */; };
+		00000000000000000021000E /* SyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000E /* SyncStore.swift */; };
+		00000000000000000021000F /* UserNotificationReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000F /* UserNotificationReminder.swift */; };
+		000000000000000000210001 /* AtomicFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200001 /* AtomicFile.swift */; };
+		000000000000000000210002 /* LegacyIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200002 /* LegacyIDs.swift */; };
+		000000000000000000210003 /* PhotoArchiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200003 /* PhotoArchiver.swift */; };
+		000000000000000000210004 /* PhotoPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200004 /* PhotoPreparer.swift */; };
+		000000000000000000210005 /* ReceiptsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200005 /* ReceiptsAPI.swift */; };
+		000000000000000000210006 /* Sha256.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200006 /* Sha256.swift */; };
+		000000000000000000210007 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200007 /* SyncCoordinator.swift */; };
+		000000000000000000210008 /* SyncDates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200008 /* SyncDates.swift */; };
+		000000000000000000210009 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000200009 /* SyncEngine.swift */; };
+		00000000000000000021000A /* SyncMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000A /* SyncMerge.swift */; };
+		00000000000000000021000B /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000B /* SyncModels.swift */; };
+		00000000000000000021000C /* SyncSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000C /* SyncSchema.swift */; };
+		00000000000000000021000D /* SyncSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000D /* SyncSettings.swift */; };
+		00000000000000000021000E /* SyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000E /* SyncStore.swift */; };
+		00000000000000000021000F /* UserNotificationReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000020000F /* UserNotificationReminder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -143,6 +190,53 @@
 		00000000000000000020000D /* SyncSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettings.swift; sourceTree = "<group>"; };
 		00000000000000000020000E /* SyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>"; };
 		00000000000000000020000F /* UserNotificationReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationReminder.swift; sourceTree = "<group>"; };
+		000000000000000000200001 /* AtomicFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtomicFile.swift; sourceTree = "<group>"; };
+		000000000000000000200002 /* LegacyIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyIDs.swift; sourceTree = "<group>"; };
+		000000000000000000200003 /* PhotoArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoArchiver.swift; sourceTree = "<group>"; };
+		000000000000000000200004 /* PhotoPreparer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreparer.swift; sourceTree = "<group>"; };
+		000000000000000000200005 /* ReceiptsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptsAPI.swift; sourceTree = "<group>"; };
+		000000000000000000200006 /* Sha256.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sha256.swift; sourceTree = "<group>"; };
+		000000000000000000200007 /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
+		000000000000000000200008 /* SyncDates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDates.swift; sourceTree = "<group>"; };
+		000000000000000000200009 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
+		00000000000000000020000A /* SyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMerge.swift; sourceTree = "<group>"; };
+		00000000000000000020000B /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
+		00000000000000000020000C /* SyncSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSchema.swift; sourceTree = "<group>"; };
+		00000000000000000020000D /* SyncSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettings.swift; sourceTree = "<group>"; };
+		00000000000000000020000E /* SyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>"; };
+		00000000000000000020000F /* UserNotificationReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationReminder.swift; sourceTree = "<group>"; };
+		000000000000000000220001 /* ReceiptStore+Sync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReceiptStore+Sync.swift"; sourceTree = "<group>"; };
+		000000000000000000220002 /* CloudSyncViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncViews.swift; sourceTree = "<group>"; };
+		000000000000000000200001 /* AtomicFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtomicFile.swift; sourceTree = "<group>"; };
+		000000000000000000200002 /* LegacyIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyIDs.swift; sourceTree = "<group>"; };
+		000000000000000000200003 /* PhotoArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoArchiver.swift; sourceTree = "<group>"; };
+		000000000000000000200004 /* PhotoPreparer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreparer.swift; sourceTree = "<group>"; };
+		000000000000000000200005 /* ReceiptsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptsAPI.swift; sourceTree = "<group>"; };
+		000000000000000000200006 /* Sha256.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sha256.swift; sourceTree = "<group>"; };
+		000000000000000000200007 /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
+		000000000000000000200008 /* SyncDates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDates.swift; sourceTree = "<group>"; };
+		000000000000000000200009 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
+		00000000000000000020000A /* SyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMerge.swift; sourceTree = "<group>"; };
+		00000000000000000020000B /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
+		00000000000000000020000C /* SyncSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSchema.swift; sourceTree = "<group>"; };
+		00000000000000000020000D /* SyncSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettings.swift; sourceTree = "<group>"; };
+		00000000000000000020000E /* SyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>"; };
+		00000000000000000020000F /* UserNotificationReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationReminder.swift; sourceTree = "<group>"; };
+		000000000000000000200001 /* AtomicFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtomicFile.swift; sourceTree = "<group>"; };
+		000000000000000000200002 /* LegacyIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyIDs.swift; sourceTree = "<group>"; };
+		000000000000000000200003 /* PhotoArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoArchiver.swift; sourceTree = "<group>"; };
+		000000000000000000200004 /* PhotoPreparer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreparer.swift; sourceTree = "<group>"; };
+		000000000000000000200005 /* ReceiptsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptsAPI.swift; sourceTree = "<group>"; };
+		000000000000000000200006 /* Sha256.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sha256.swift; sourceTree = "<group>"; };
+		000000000000000000200007 /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
+		000000000000000000200008 /* SyncDates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDates.swift; sourceTree = "<group>"; };
+		000000000000000000200009 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
+		00000000000000000020000A /* SyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMerge.swift; sourceTree = "<group>"; };
+		00000000000000000020000B /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
+		00000000000000000020000C /* SyncSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSchema.swift; sourceTree = "<group>"; };
+		00000000000000000020000D /* SyncSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettings.swift; sourceTree = "<group>"; };
+		00000000000000000020000E /* SyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>"; };
+		00000000000000000020000F /* UserNotificationReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationReminder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -177,6 +271,7 @@
 		000000000000000000100013 /* Database */ = {
 			isa = PBXGroup;
 			children = (
+				000000000000000000220001 /* ReceiptStore+Sync.swift */,
 				00000000000000000010001C /* Database.swift */,
 				00000000000000000010F100 /* ReceiptStore+Stats.swift */,
 				00000000000000000010F101 /* ReceiptStore+Data.swift */,
@@ -233,6 +328,7 @@
 		000000000000000000100017 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				000000000000000000220002 /* CloudSyncViews.swift */,
 				00000000000000000010003C /* ContentView.swift */,
 				00000000000000000010003E /* Formatting.swift */,
 				000000000000000000100040 /* ItemRowView.swift */,
@@ -367,6 +463,8 @@
 				00000000000000000021000D /* SyncSettings.swift in Sources */,
 				00000000000000000021000E /* SyncStore.swift in Sources */,
 				00000000000000000021000F /* UserNotificationReminder.swift in Sources */,
+				000000000000000000230002 /* CloudSyncViews.swift in Sources */,
+				000000000000000000230001 /* ReceiptStore+Sync.swift in Sources */,
 				00000000000000000010001B /* ReceiptsApp.swift in Sources */,
 				00000000000000000010001D /* Database.swift in Sources */,
 				0000000000000000001001A1 /* UploadQueue.swift in Sources */,

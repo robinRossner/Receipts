@@ -45,6 +45,9 @@ struct AppEnvironment: Sendable {
         )
     }
 
+    /// The folders the sync code works with.
+    var syncPaths: SyncPaths { SyncPaths(appSupportDir: appSupportDir, archiveDir: archiveDir) }
+
     /// `source_image` is stored relative to the app-support dir (e.g. `receipts_archive/2026/07/x.jpg`); older rows (and receipts whose
     /// image move failed and still sit in staging) hold absolute paths, which pass through.
     func resolveImagePath(_ stored: String?) -> String? {

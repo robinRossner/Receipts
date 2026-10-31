@@ -43,7 +43,7 @@ struct UploadQueueView: View {
 
     private func receiptId(of job: UploadJob) -> Int? {
         switch job.state {
-        case .done(let id), .duplicate(let id): return id
+        case .done(let id), .uploaded(let id), .duplicate(let id): return id
         default: return nil
         }
     }
@@ -95,8 +95,8 @@ struct UploadQueueView: View {
     @ViewBuilder private func statusIcon(_ state: UploadJob.State) -> some View {
         switch state {
         case .queued: Image(systemName: "clock").foregroundColor(AppTheme.inkSoft)
-        case .scanning, .extracting, .categorizing, .saving: ProgressView().controlSize(.mini)
-        case .done: Image(systemName: "checkmark.circle.fill").foregroundColor(AppTheme.ink)
+        case .scanning, .extracting, .categorizing, .saving, .uploading: ProgressView().controlSize(.mini)
+        case .done, .uploaded: Image(systemName: "checkmark.circle.fill").foregroundColor(AppTheme.ink)
         case .duplicate: Image(systemName: "equal.circle").foregroundColor(AppTheme.inkSoft)
         case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundColor(AppTheme.penRed)
         case .cancelled: Image(systemName: "slash.circle").foregroundColor(AppTheme.inkSoft)
@@ -115,7 +115,9 @@ struct UploadQueueView: View {
         case .extracting: return "Reading receipt…"
         case .categorizing: return "Categorizing…"
         case .saving: return "Saving…"
+        case .uploading: return "Uploading…"
         case .done(let id): return "Imported as receipt #\(id)"
+        case .uploaded(let id): return "Uploaded (receipt #\(id)); the server is reading it"
         case .duplicate(let id): return "Already imported (receipt #\(id))"
         case .failed(let message): return message
         case .cancelled: return "Cancelled"

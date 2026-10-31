@@ -34,6 +34,8 @@ struct SettingsView: View {
         TabView {
             general
                 .tabItem { Label("AI Backend", systemImage: "cpu") }
+            CloudSyncSettingsView(sync: store.sync)
+                .tabItem { Label("Cloud sync", systemImage: "icloud") }
             DataSettingsView()
                 .tabItem { Label("Data", systemImage: "externaldrive") }
             DictionaryEditorView()

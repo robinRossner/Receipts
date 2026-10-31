@@ -15,6 +15,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             topNav
             Rectangle().fill(AppTheme.rule).frame(height: 1)
+            SyncBannersView(sync: store.sync)
             if let error = store.lastError {
                 errorBanner(error)
             }
@@ -54,6 +55,7 @@ struct ContentView: View {
                     .lineLimit(2)
                     .frame(maxWidth: 260, alignment: .trailing)
             }
+            SyncStatusView(sync: store.sync)
             HStack(spacing: 6) {
                 tabButton("Review", .review)
                 tabButton("Overview", .overview)

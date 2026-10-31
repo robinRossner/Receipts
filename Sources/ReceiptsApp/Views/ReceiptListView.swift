@@ -200,17 +200,28 @@ private struct ReceiptStubView: View {
             ZStack(alignment: .topTrailing) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(receipt.store ?? "Unknown")
+                        Text(receipt.store ?? (receipt.processing == nil ? "Unknown" : "New receipt"))
                             .font(AppTheme.body(13, weight: .semibold))
                             .foregroundColor(AppTheme.ink)
-                        Text(receipt.date ?? "")
-                            .font(AppTheme.mono(12))
-                            .foregroundColor(AppTheme.inkSoft)
+                        if let processing = receipt.processing {
+                            HStack(spacing: 4) {
+                                if processing.isActive { ProgressView().controlSize(.mini) }
+                                Text(processing.label)
+                                    .font(AppTheme.body(11))
+                                    .foregroundColor(processing.isActive ? AppTheme.inkSoft : AppTheme.penRed)
+                            }
+                        } else {
+                            Text(receipt.date ?? "")
+                                .font(AppTheme.mono(12))
+                                .foregroundColor(AppTheme.inkSoft)
+                        }
                     }
                     Spacer()
-                    Text(fmtMoney(receipt.total))
-                        .font(AppTheme.mono(13))
-                        .foregroundColor(AppTheme.ink)
+                    if receipt.processing == nil || receipt.total != nil {
+                        Text(fmtMoney(receipt.total))
+                            .font(AppTheme.mono(13))
+                            .foregroundColor(AppTheme.ink)
+                    }
                 }
                 .padding(10)
 
