@@ -138,10 +138,24 @@ final class E2ETests: XCTestCase {
         pkill.arguments = ["-f", "uvicorn server:app --host 127.0.0.1 --port \(port)"]
         try? pkill.run()
         pkill.waitUntilExit()
-        let deadline = Date().addingTimeInterval(10)
-        while Date() < deadline, canConnect(port: port) { Thread.sleep(forTimeInterval: 0.2) }
+        // port closed AND the process gone (uvicorn shuts down gracefully, which takes a moment)
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, canConnect(port: port) || process.isRunning || isRunning(pattern: "uvicorn server:app --host 127.0.0.1 --port \(port)") {
+            Thread.sleep(forTimeInterval: 0.2)
+        }
         XCTAssertFalse(canConnect(port: port), "the e2e server is still listening on \(port)")
+        XCTAssertFalse(isRunning(pattern: "uvicorn server:app --host 127.0.0.1 --port \(port)"), "the e2e server process is still running")
         serverProcess = nil
+    }
+
+    private func isRunning(pattern: String) -> Bool {
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-f", pattern]
+        pgrep.standardOutput = FileHandle.nullDevice
+        try? pgrep.run()
+        pgrep.waitUntilExit()
+        return pgrep.terminationStatus == 0
     }
 
     private func canConnect(port: Int) -> Bool {
