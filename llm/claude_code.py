@@ -4,12 +4,16 @@ Port of ClaudeCLIProvider.swift. How the photo reaches Claude: not through a fil
 tools (`--tools ""`; the fitness advisor provider is text only): the prompt is sent on stdin as one
 `--input-format stream-json` user message whose content holds a base64 `image` block followed by the
 prompt text, exactly as the Mac app does. The answer comes from `--json-schema` (delivered in the
-envelope's `structured_output`, with the `result` text as a fallback).
+result message's `structured_output`, with the `result` text as a fallback).
 
-Flags (checked against `claude --help` of Claude Code 2.1.314; no prompt was run):
-  -p, --output-format json, --input-format stream-json (images only), --json-schema <schema>,
-  --model, --max-turns 3 (hidden but accepted; `--json-schema` answers through an internal tool
-  call, so one turn can be too few), --tools "", --strict-mcp-config, --setting-sources "",
+Flags (checked against `claude --help` and real calls of Claude Code 2.1.314):
+  -p, --output-format json (text) or stream-json --verbose (images: the CLI rejects
+  `--input-format stream-json` with any other output format, and stream-json output needs
+  `--verbose`; it prints NDJSON whose last line is the `result` message), --input-format
+  stream-json (images only), --json-schema <schema>,
+  --model, --max-turns 3 (hidden but accepted; a real call with `--max-turns 1` also succeeded
+  with `--json-schema` and `--tools ""`, num_turns 2, but 3 leaves room for the re-prompt on a
+  schema mismatch), --tools "", --strict-mcp-config, --setting-sources "",
   --disable-slash-commands, --no-session-persistence, --permission-mode dontAsk,
   --system-prompt <text> (replaces Claude Code's coding system prompt), --effort <level>.
 Not used: --bare (never reads the OAuth token).
@@ -93,11 +97,21 @@ def stream_json_message(image: bytes, media_type: str, prompt: str) -> bytes:
 
 
 def parse_envelope(stdout: str) -> dict[str, Any] | None:
-    """The `result` message of `--output-format json` (an object, or a list of messages)."""
+    """The final `result` message of the CLI output, or None if there is none.
+
+    Accepts `--output-format json` (one object, or a list of messages) and `stream-json` (NDJSON,
+    one message per line: system init, assistant, user, rate_limit_event, ..., result). Lines that
+    do not parse (a truncated tail) are skipped; a stream without a `result` line is incomplete.
+    """
     try:
         data = json.loads(stdout)
     except ValueError:
-        return None
+        data = []
+        for line in stdout.splitlines():
+            try:
+                data.append(json.loads(line))
+            except ValueError:
+                continue
     if isinstance(data, list):
         data = next(
             (m for m in reversed(data) if isinstance(m, dict) and m.get("type") == "result"), None
@@ -105,15 +119,38 @@ def parse_envelope(stdout: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+def _failure_text(envelope: dict[str, Any] | None, stdout: str, stderr: str) -> str:
+    if envelope is not None:
+        parts = [str(envelope.get("result") or "")]
+        errors = envelope.get("errors")
+        if isinstance(errors, list):
+            parts += [str(e) for e in errors]
+        text = " ".join(p for p in parts if p).strip()
+        subtype = envelope.get("subtype")
+        if text:
+            return text
+        return str(subtype) if subtype and subtype != "success" else ""
+    # No result message: stderr says why. stdout may be NDJSON (init event first), so it is only
+    # a last resort and cut short.
+    return stderr.strip()[:300] or stdout.strip()[:300]
+
+
 def classify_failure(
     envelope: dict[str, Any] | None, stdout: str, stderr: str, returncode: int | None
 ) -> LLMError:
     status = (envelope or {}).get("api_error_status")
-    text = str((envelope or {}).get("result") or "") or f"{stdout[:300]} {stderr[:300]}"
+    text = _failure_text(envelope, stdout, stderr)
     if status == 429 or _LIMIT_RE.search(text):
         return LLMError("usage_limit", USAGE_LIMIT_MESSAGE, retryable=True)
     if status in (401, 403) or _AUTH_RE.search(text):
         return LLMError("auth", AUTH_MESSAGE)
+    if envelope is None and returncode == 0 and stdout.strip():
+        # exit 0 but no `result` message: the stream was cut off, or the output is not the CLI's
+        return LLMError(
+            "cli_error",
+            "Claude Code output ended without a result message (truncated or not CLI output).",
+            retryable=True,
+        )
     detail = redact(text.strip())[:300] or "no output"
     return LLMError(
         "cli_error",
@@ -155,7 +192,8 @@ class ClaudeCodeProvider:
             "--model",
             s.receipts_llm_model,
             "--output-format",
-            "json",
+            # --input-format stream-json is only accepted together with stream-json output
+            "stream-json" if image_input else "json",
             "--json-schema",
             json.dumps(anthropic_compatible(schema), separators=(",", ":")),
             "--max-turns",
@@ -175,7 +213,7 @@ class ClaudeCodeProvider:
             s.receipts_llm_effort,
         ]
         if image_input:
-            args += ["--input-format", "stream-json"]
+            args += ["--input-format", "stream-json", "--verbose"]
         return args
 
     @staticmethod
@@ -236,7 +274,10 @@ class ClaudeCodeProvider:
         register_secret(token)
         run = await self._run_cli(argv_for, stdin, token)
         envelope = parse_envelope(run.stdout)
-        if run.returncode != 0 or envelope is None or envelope.get("is_error"):
+        failed = envelope is None or envelope.get("is_error")
+        if envelope is not None and str(envelope.get("subtype") or "success") != "success":
+            failed = True  # error_max_turns, error_during_execution, ...
+        if run.returncode != 0 or failed:
             if run.stderr.strip():
                 log.warning("claude cli stderr: %s", redact(run.stderr.strip())[:500])
             raise classify_failure(envelope, run.stdout, run.stderr, run.returncode)
