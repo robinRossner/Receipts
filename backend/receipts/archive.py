@@ -24,11 +24,11 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from apps.receipts import photos, state
-from apps.receipts.db.models import ExtractionJob, Receipt
-from apps.receipts.errors import api_error
-from apps.receipts.settings import ReceiptsSettings
 from core.db import iso_z, utcnow
+from receipts import photos, state
+from receipts.db.models import ExtractionJob, Receipt
+from receipts.errors import api_error
+from receipts.settings import ReceiptsSettings
 
 log = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ def status(db: Session, settings: ReceiptsSettings, now: datetime | None = None)
     queue = dict(
         db.execute(select(ExtractionJob.status, func.count()).group_by(ExtractionJob.status)).all()
     )
-    from apps.receipts.llm.factory import provider_status
+    from receipts.llm.factory import provider_status
 
     return {
         "server_time": iso_z(now),

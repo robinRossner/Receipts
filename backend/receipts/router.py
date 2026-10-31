@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from apps.receipts.api.router import router
+from receipts.api.router import router
 
 RECEIPTS_PREFIX = "/api/v1"  # the router itself carries `/receipts`
 

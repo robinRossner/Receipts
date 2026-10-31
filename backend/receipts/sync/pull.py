@@ -16,10 +16,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.receipts.db.models import ItemDictionary, LineItem, Receipt
-from apps.receipts.extraction.taxonomy import get_taxonomy
-from apps.receipts.sync.serialize import dictionary_out, line_item_out, receipt_out
 from core.db import iso_z, utcnow
+from receipts.db.models import ItemDictionary, LineItem, Receipt
+from receipts.extraction.taxonomy import get_taxonomy
+from receipts.sync.serialize import dictionary_out, line_item_out, receipt_out
 
 PAGE_SIZE = 2000
 _CURSOR = re.compile(r"^c(\d+)$")

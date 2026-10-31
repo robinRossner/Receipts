@@ -1,7 +1,7 @@
 #!/bin/sh
 # Backend for the iPhone simulator e2e run: the real FastAPI server from a TEMP var dir (dummy token, no Claude
 # credentials, worker off; extraction is finished by `seed`, with the backend tests' scripted fake provider).
-# Never touches backend/var or ~/Library/Application Support/ReceiptsApp. Needs `uv` and `uv sync` in the backend dir (RECEIPTS_BACKEND_DIR).
+# Never touches backend/var or ~/Library/Application Support/ReceiptsApp. Needs `uv` and `uv sync` in backend/.
 #
 #   Tests/ios-e2e/server.sh start     # prints URL and token, state in $STATE (default /tmp/receipts-ios-e2e.env)
 #   Tests/ios-e2e/server.sh seed      # finish queued extractions (no Claude call)
@@ -9,11 +9,11 @@
 #   Tests/ios-e2e/server.sh stop
 set -eu
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-# The server code is in the FitnessBuddy repo: RECEIPTS_BACKEND_DIR (default ~/Projects/FitnessBuddy/backend).
-BACKEND="${RECEIPTS_BACKEND_DIR:-$HOME/Projects/FitnessBuddy/backend}"
-if [ ! -d "$BACKEND/apps/receipts" ]; then
-  echo "error: server code not found at $BACKEND (expected apps/receipts inside)." >&2
-  echo "It lives in the FitnessBuddy repo: set RECEIPTS_BACKEND_DIR=/path/to/FitnessBuddy/backend" >&2
+# The server code is this repo's backend/; RECEIPTS_BACKEND_DIR points the run at another copy.
+BACKEND="${RECEIPTS_BACKEND_DIR:-$HERE/backend}"
+if [ ! -d "$BACKEND/receipts" ]; then
+  echo "error: server code not found at $BACKEND (expected a receipts package inside)." >&2
+  echo "It is this repo's backend/; set RECEIPTS_BACKEND_DIR only to use another copy." >&2
   exit 1
 fi
 STATE="${RECEIPTS_IOS_E2E_STATE:-${TMPDIR:-/tmp}/receipts-ios-e2e.env}"
@@ -22,24 +22,21 @@ export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin"
 load() { [ -f "$STATE" ] || { echo "no state file $STATE: run start" >&2; exit 1; }; . "$STATE"; }
 
 server_env() {
-  export DATABASE_URL="sqlite:///$ROOT/var/fitness/fitness.db"
   export RECEIPTS_DATABASE_URL="sqlite:///$ROOT/var/receipts.db"
   export RECEIPTS_PHOTOS_DIR="$ROOT/var/receipts_photos"
-  export RECEIPTS_API_TOKEN="$TOKEN" API_TOKEN="e2e-dummy-fitness-token"
+  export RECEIPTS_API_TOKEN="$TOKEN"
   export RECEIPTS_WORKER_ENABLED=false SCHEDULER_ENABLED=false
   export ANTHROPIC_API_KEY="" CLAUDE_CODE_OAUTH_TOKEN="" NOTIFY_URL="" RECEIPTS_NOTIFY_URL=""
-  export GARMIN_TOKEN_CACHE_PATH="$ROOT/var/fitness/garmin_token.json" GARMIN_CONNECT_TOKEN_DIR="$ROOT/var/fitness/garminconnect" GARMIN_FIT_DIR="$ROOT/var/fitness/fit"
 }
 
 case "${1:-}" in
   start)
     ROOT="$(mktemp -d "${TMPDIR:-/tmp}/receipts-ios-e2e.XXXXXX")"
     TOKEN="ios-e2e-dummy-token"; PORT="${PORT:-8787}"
-    mkdir -p "$ROOT/var/fitness" "$ROOT/var/receipts_photos"
+    mkdir -p "$ROOT/var/receipts_photos"
     printf 'ROOT=%s\nTOKEN=%s\nPORT=%s\n' "$ROOT" "$TOKEN" "$PORT" > "$STATE"
     server_env; cd "$BACKEND"
-    uv run alembic -c apps/fitness/alembic.ini upgrade head >"$ROOT/alembic1.log" 2>&1
-    uv run alembic -c apps/receipts/alembic.ini upgrade head >"$ROOT/alembic2.log" 2>&1
+    uv run alembic upgrade head >"$ROOT/alembic.log" 2>&1
     nohup uv run uvicorn server:app --host 127.0.0.1 --port "$PORT" >"$ROOT/uvicorn.log" 2>&1 &
     echo $! > "$ROOT/pid"
     for _ in $(seq 1 60); do curl -fs "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break; sleep 0.5; done

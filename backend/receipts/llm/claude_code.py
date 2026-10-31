@@ -1,7 +1,7 @@
 """Receipts provider that runs headless Claude Code (`claude -p`) on a Claude subscription.
 
 Port of ClaudeCLIProvider.swift. How the photo reaches Claude: not through a file and not through
-tools (`--tools ""`; the fitness advisor provider is text only): the prompt is sent on stdin as one
+tools (`--tools ""`): the prompt is sent on stdin as one
 `--input-format stream-json` user message whose content holds a base64 `image` block followed by the
 prompt text, exactly as the Mac app does. The answer comes from `--json-schema` (delivered in the
 result message's `structured_output`, with the `result` text as a fallback).
@@ -38,9 +38,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from apps.receipts.llm.base import LLMError, LLMResponse, anthropic_compatible
-from apps.receipts.settings import ReceiptsSettings
 from core.redact import install_log_redaction, redact, register_secret
+from receipts.llm.base import LLMError, LLMResponse, anthropic_compatible
+from receipts.settings import ReceiptsSettings
 
 log = logging.getLogger(__name__)
 

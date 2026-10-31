@@ -12,7 +12,7 @@ from typing import Literal
 
 from core.settings import BACKEND_DIR, CoreSettings
 
-RECEIPTS_DIR = Path(__file__).resolve().parent  # backend/apps/receipts: alembic, data
+RECEIPTS_DIR = Path(__file__).resolve().parent  # backend/receipts: alembic, data
 
 # Default model: the one the Mac app's providers use (LLMSettings.swift: `claude-haiku-5-5` for the
 # Messages API, the alias `haiku` for the CLI). Haiku 5.5 is current (not retired); one id for both
@@ -27,7 +27,7 @@ class ReceiptsSettings(CoreSettings):
     receipts_max_photo_bytes: int = 15 * 1024 * 1024
     receipts_taxonomy_path: Path = RECEIPTS_DIR / "data" / "category_taxonomy.json"
 
-    # ---- LLM (apps/receipts/llm). The credentials are core's: ANTHROPIC_API_KEY (Messages API)
+    # ---- LLM (receipts/llm). The credentials are core's: ANTHROPIC_API_KEY (Messages API)
     # and CLAUDE_CODE_OAUTH_TOKEN (headless `claude -p` on a subscription). auto = claude_code if
     # that token is set, else api if a key is set, else the queue waits (jobs stay queued).
     receipts_llm_provider: Literal["claude_code", "api", "auto"] = "auto"

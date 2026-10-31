@@ -8,8 +8,8 @@ from contextlib import contextmanager
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from apps.receipts.settings import get_settings
 from core.db import make_engine as core_make_engine
+from receipts.settings import get_settings
 
 
 def make_engine(url: str | None = None) -> Engine:

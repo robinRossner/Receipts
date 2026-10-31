@@ -13,11 +13,12 @@ final class E2ETests: XCTestCase {
     private var port = 0
     private let token = "e2e-dummy-receipts-token"
 
-    /// The server code lives in the FitnessBuddy repo: RECEIPTS_BACKEND_DIR, default ~/Projects/FitnessBuddy/backend.
+    /// The server code is in this repo's `backend/`; RECEIPTS_BACKEND_DIR points the test at another copy.
     private var backendDir: URL {
         let env = ProcessInfo.processInfo.environment
-        let path = env["RECEIPTS_BACKEND_DIR"] ?? (NSHomeDirectory() + "/Projects/FitnessBuddy/backend")
-        return URL(fileURLWithPath: path)
+        let own = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("backend").path
+        return URL(fileURLWithPath: env["RECEIPTS_BACKEND_DIR"] ?? own)
     }
     private var seedScript: String {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("e2e/seed_extractions.py").path
@@ -27,10 +28,10 @@ final class E2ETests: XCTestCase {
 
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["RECEIPTS_E2E"] == "1", "set RECEIPTS_E2E=1 (Tests/run-e2e.sh)")
-        guard FileManager.default.fileExists(atPath: backendDir.appendingPathComponent("apps/receipts").path) else {
+        guard FileManager.default.fileExists(atPath: backendDir.appendingPathComponent("receipts").path) else {
             throw NSError(domain: "E2ETests", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                "Server code not found at \(backendDir.path) (expected apps/receipts inside). It lives in the FitnessBuddy repo: "
-                + "set RECEIPTS_BACKEND_DIR=/path/to/FitnessBuddy/backend"])
+                "Server code not found at \(backendDir.path) (expected a receipts package inside). "
+                + "It is this repo's backend/; set RECEIPTS_BACKEND_DIR only to use another copy"])
         }
         root = try makeTempDir("receipts-e2e")
     }
@@ -46,20 +47,14 @@ final class E2ETests: XCTestCase {
         var env = ProcessInfo.processInfo.environment
         let path = env["PATH"] ?? "/usr/bin:/bin"
         env["PATH"] = path + ":/opt/homebrew/bin:/usr/local/bin:\(NSHomeDirectory())/.local/bin"
-        let fitnessDir = serverVar.appendingPathComponent("fitness")
         for (k, v) in [
-            "DATABASE_URL": "sqlite:///\(fitnessDir.path)/fitness.db",
             "RECEIPTS_DATABASE_URL": "sqlite:///\(serverVar.path)/receipts.db",
             "RECEIPTS_PHOTOS_DIR": photosDir.path,
             "RECEIPTS_API_TOKEN": token,
-            "API_TOKEN": "e2e-dummy-fitness-token",
             "RECEIPTS_WORKER_ENABLED": "false",
             "SCHEDULER_ENABLED": "false",
             "ANTHROPIC_API_KEY": "",
             "CLAUDE_CODE_OAUTH_TOKEN": "",
-            "GARMIN_TOKEN_CACHE_PATH": fitnessDir.appendingPathComponent("garmin_token.json").path,
-            "GARMIN_CONNECT_TOKEN_DIR": fitnessDir.appendingPathComponent("garminconnect").path,
-            "GARMIN_FIT_DIR": fitnessDir.appendingPathComponent("fit").path,
             "NOTIFY_URL": "", "RECEIPTS_NOTIFY_URL": "",
         ] { env[k] = v }
         return env
@@ -102,11 +97,9 @@ final class E2ETests: XCTestCase {
     }
 
     private func startServer() async throws -> URLSessionReceiptsAPI {
-        try FileManager.default.createDirectory(at: serverVar.appendingPathComponent("fitness"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: photosDir, withIntermediateDirectories: true)
-        // both migrations, as docker-entrypoint.sh does
-        try run(["uv", "run", "alembic", "-c", "apps/fitness/alembic.ini", "upgrade", "head"], label: "alembic-fitness")
-        try run(["uv", "run", "alembic", "-c", "apps/receipts/alembic.ini", "upgrade", "head"], label: "alembic-receipts")
+        // the migration, as docker-entrypoint.sh does
+        try run(["uv", "run", "alembic", "upgrade", "head"], label: "alembic-receipts")
 
         port = try freePort()
         let log = root.appendingPathComponent("uvicorn.log")
@@ -239,10 +232,10 @@ final class E2ETests: XCTestCase {
         let preSyncCopy = root.appendingPathComponent("mac-before-v7.db")
         try FileManager.default.copyItem(atPath: dbPath, toPath: preSyncCopy.path)   // what the operator hands to the script
 
-        let dry = try run(["uv", "run", "python", "-m", "apps.receipts.migrate_mac_data", "--db", preSyncCopy.path, "--archive", appDir.appendingPathComponent("receipts_archive").path],
+        let dry = try run(["uv", "run", "python", "-m", "receipts.migrate_mac_data", "--db", preSyncCopy.path, "--archive", appDir.appendingPathComponent("receipts_archive").path],
                           label: "migrate-dry-run")
         XCTAssertTrue(dry.contains("DRY RUN"), dry)
-        let applied = try run(["uv", "run", "python", "-m", "apps.receipts.migrate_mac_data", "--db", preSyncCopy.path, "--archive", appDir.appendingPathComponent("receipts_archive").path, "--apply"],
+        let applied = try run(["uv", "run", "python", "-m", "receipts.migrate_mac_data", "--db", preSyncCopy.path, "--archive", appDir.appendingPathComponent("receipts_archive").path, "--apply"],
                               label: "migrate-apply")
         XCTAssertTrue(applied.contains("receipts:") && applied.contains("3 new"), applied)
 

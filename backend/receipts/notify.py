@@ -1,6 +1,6 @@
 """Delivering a reminder to the operator.
 
-`apps/fitness/notify/` is an empty stub and the backend has no push / e-mail channel, so the only
+The backend has no push / e-mail channel, so the only
 delivery implemented here is optional and needs one setting: RECEIPTS_NOTIFY_URL, an ntfy.sh-style
 endpoint (the body is the message, the `Title` header the title) that the ntfy phone app shows as
 a push. Unset (the default) there is no way to reach the operator from the server: `send` returns False,
@@ -14,8 +14,8 @@ import logging
 
 import httpx
 
-from apps.receipts.settings import get_settings
 from core.redact import redact
+from receipts.settings import get_settings
 
 log = logging.getLogger(__name__)
 

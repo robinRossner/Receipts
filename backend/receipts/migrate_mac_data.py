@@ -1,4 +1,4 @@
-"""One-off import of the Mac app's data: `uv run python -m apps.receipts.migrate_mac_data`.
+"""One-off import of the Mac app's data: `uv run python -m receipts.migrate_mac_data`.
 
     --db PATH        the Mac app's receipts.db (opened read-only)
     --archive DIR    its receipts_archive/ folder (only used to find and hash the photos)
@@ -30,11 +30,12 @@ from alembic.config import Config
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from apps.receipts import photos
-from apps.receipts.db.models import ItemDictionary, LineItem, Receipt
-from apps.receipts.db.session import make_engine
-from apps.receipts.settings import RECEIPTS_DIR, get_settings
 from core.db import utcnow
+from core.settings import BACKEND_DIR
+from receipts import photos
+from receipts.db.models import ItemDictionary, LineItem, Receipt
+from receipts.db.session import make_engine
+from receipts.settings import get_settings
 
 NAMESPACE = uuid.UUID("0b8f3c52-6d1e-4c7a-9a4e-2f5d8e1b7c63")
 ARCHIVED_BY = "mac-migration"
@@ -264,8 +265,7 @@ def run_migration(
     mac = sqlite3.connect(f"file:{mac_db_path}?mode=ro", uri=True)
     try:
         if apply:
-            cfg = Config(str(RECEIPTS_DIR / "alembic.ini"))
-            cfg.set_main_option("script_location", str(RECEIPTS_DIR / "alembic"))
+            cfg = Config(str(BACKEND_DIR / "alembic.ini"))
             cfg.attributes["url"] = database_url
             command.upgrade(cfg, "head")
         elif not _db_exists(database_url):
@@ -298,8 +298,7 @@ def _dry_run_on_empty_database(
 
     with tempfile.TemporaryDirectory(prefix="receipts-dryrun-") as tmp:
         url = f"sqlite:///{tmp}/dry.db"
-        cfg = Config(str(RECEIPTS_DIR / "alembic.ini"))
-        cfg.set_main_option("script_location", str(RECEIPTS_DIR / "alembic"))
+        cfg = Config(str(BACKEND_DIR / "alembic.ini"))
         cfg.attributes["url"] = url
         command.upgrade(cfg, "head")
         engine = make_engine(url)

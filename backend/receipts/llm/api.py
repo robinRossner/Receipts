@@ -15,9 +15,9 @@ from typing import Any
 
 import anthropic
 
-from apps.receipts.llm.base import LLMError, LLMResponse, anthropic_compatible
-from apps.receipts.settings import ReceiptsSettings
 from core.redact import install_log_redaction, redact, register_secret
+from receipts.llm.base import LLMError, LLMResponse, anthropic_compatible
+from receipts.settings import ReceiptsSettings
 
 log = logging.getLogger(__name__)
 

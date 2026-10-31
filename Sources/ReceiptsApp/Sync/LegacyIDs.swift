@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 /// The stable UUIDs the Mac app's pre-sync rows get. MUST give exactly what
-/// `backend/apps/receipts/migrate_mac_data.py` (`uid()`) gives the same rows, otherwise the first
+/// `backend/receipts/migrate_mac_data.py` (`uid()`) gives the same rows, otherwise the first
 /// sync would see every receipt as new and duplicate it: `uuid5(NAMESPACE, "mac:<kind>:<row id>")`.
 /// `LegacyIDsTests` pins known values produced by the Python function.
 enum LegacyIDs {

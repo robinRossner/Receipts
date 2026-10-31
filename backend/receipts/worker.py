@@ -20,14 +20,14 @@ from datetime import timedelta
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from apps.receipts.db.models import ExtractionJob, Receipt
-from apps.receipts.extraction.pipeline import run_extraction
-from apps.receipts.extraction.taxonomy import get_taxonomy
-from apps.receipts.llm.base import LLMError, LLMProvider
-from apps.receipts.llm.factory import build_provider
-from apps.receipts.settings import ReceiptsSettings, get_settings
 from core.db import utcnow
 from core.redact import redact
+from receipts.db.models import ExtractionJob, Receipt
+from receipts.extraction.pipeline import run_extraction
+from receipts.extraction.taxonomy import get_taxonomy
+from receipts.llm.base import LLMError, LLMProvider
+from receipts.llm.factory import build_provider
+from receipts.settings import ReceiptsSettings, get_settings
 
 log = logging.getLogger(__name__)
 

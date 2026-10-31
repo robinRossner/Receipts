@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from apps.receipts.llm.base import LLMProvider
-from apps.receipts.settings import ReceiptsSettings
+from receipts.llm.base import LLMProvider
+from receipts.settings import ReceiptsSettings
 
 
 def build_provider(settings: ReceiptsSettings) -> LLMProvider | None:
     """The provider `settings.llm_provider_resolved` names, or None without a credential."""
     resolved = settings.llm_provider_resolved
     if resolved == "claude_code":
-        from apps.receipts.llm.claude_code import ClaudeCodeProvider
+        from receipts.llm.claude_code import ClaudeCodeProvider
 
         return ClaudeCodeProvider(settings)
     if resolved == "api":
-        from apps.receipts.llm.api import AnthropicProvider
+        from receipts.llm.api import AnthropicProvider
 
         return AnthropicProvider(settings)
     return None

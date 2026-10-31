@@ -1,5 +1,5 @@
 """Receipts API under `/api/v1/receipts/...`. Every route needs the receipts bearer token
-(`RECEIPTS_API_TOKEN`); the fitness token gets 401. Contract and examples: docs/api/receipts.md.
+(`RECEIPTS_API_TOKEN`); any other token gets 401. Contract and examples: docs/api/receipts.md.
 
 PUT  /{id}/photo                 idempotent photo upload (raw JPEG / PNG body), queues extraction
 GET  /{id}/photo                 download a photo the server still holds (archive device)
@@ -25,21 +25,21 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.receipts import archive, photos, worker
-from apps.receipts.db.models import ExtractionJob, ItemDictionary, Receipt
-from apps.receipts.db.session import get_db
-from apps.receipts.errors import api_error
-from apps.receipts.extraction.taxonomy import get_taxonomy
-from apps.receipts.settings import get_settings
-from apps.receipts.sync import pull as pull_mod
-from apps.receipts.sync import push as push_mod
-from apps.receipts.sync.schemas import PushRequest, PushResponse
-from apps.receipts.sync.serialize import dictionary_out, receipt_out
-from apps.receipts.uploads import store_photo
-from core.auth import require_receipts_token
+from core.auth import require_token
 from core.db import iso_z, utcnow
+from receipts import archive, photos, worker
+from receipts.db.models import ExtractionJob, ItemDictionary, Receipt
+from receipts.db.session import get_db
+from receipts.errors import api_error
+from receipts.extraction.taxonomy import get_taxonomy
+from receipts.settings import get_settings
+from receipts.sync import pull as pull_mod
+from receipts.sync import push as push_mod
+from receipts.sync.schemas import PushRequest, PushResponse
+from receipts.sync.serialize import dictionary_out, receipt_out
+from receipts.uploads import store_photo
 
-router = APIRouter(prefix="/receipts", dependencies=[Depends(require_receipts_token)])
+router = APIRouter(prefix="/receipts", dependencies=[Depends(require_token)])
 
 HEX64 = r"^[0-9a-fA-F]{64}$"
 

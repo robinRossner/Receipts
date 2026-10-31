@@ -21,24 +21,24 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
-from apps.receipts import photos
-from apps.receipts.db.models import LineItem, Receipt
-from apps.receipts.extraction.categorize import resolve_items
-from apps.receipts.extraction.prompts import (
+from core.db import utcnow
+from receipts import photos
+from receipts.db.models import LineItem, Receipt
+from receipts.extraction.categorize import resolve_items
+from receipts.extraction.prompts import (
     EXTRACTION_MAX_OUTPUT_TOKENS,
     EXTRACTION_PROMPT,
     extraction_schema,
 )
-from apps.receipts.extraction.taxonomy import Taxonomy
-from apps.receipts.extraction.validate import (
+from receipts.extraction.taxonomy import Taxonomy
+from receipts.extraction.validate import (
     ExtractedReceipt,
     InvalidExtraction,
     parse_response,
     validate_receipt,
 )
-from apps.receipts.llm.base import LLMError, LLMProvider
-from apps.receipts.settings import ReceiptsSettings
-from core.db import utcnow
+from receipts.llm.base import LLMError, LLMProvider
+from receipts.settings import ReceiptsSettings
 
 log = logging.getLogger(__name__)
 

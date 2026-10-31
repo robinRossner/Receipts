@@ -112,7 +112,7 @@ class Receipt(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow)  # LWW clock of client writes
     deleted_at: Mapped[datetime | None] = mapped_column()
     # Set when a client push changed this receipt or its items: extraction results never replace
-    # a user's edit (apps/receipts/extraction/pipeline.py).
+    # a user's edit (receipts/extraction/pipeline.py).
     user_edited_at: Mapped[datetime | None] = mapped_column()
 
     # --- photo (server-owned)

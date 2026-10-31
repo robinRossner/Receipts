@@ -16,18 +16,18 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.receipts.db.models import ItemDictionary
-from apps.receipts.extraction import fuzzy
-from apps.receipts.extraction.jsonutil import coerce_int, coerce_str, extract_object
-from apps.receipts.extraction.prompts import (
+from core.db import utcnow
+from receipts.db.models import ItemDictionary
+from receipts.extraction import fuzzy
+from receipts.extraction.jsonutil import coerce_int, coerce_str, extract_object
+from receipts.extraction.prompts import (
     ABBREVIATION_GLOSSARY,
     CLASSIFY_PROMPT_TEMPLATE,
     STORE_TYPE_HINTS,
     classification_schema,
 )
-from apps.receipts.extraction.taxonomy import Path3, Taxonomy
-from apps.receipts.llm.base import LLMProvider
-from core.db import utcnow
+from receipts.extraction.taxonomy import Path3, Taxonomy
+from receipts.llm.base import LLMProvider
 
 log = logging.getLogger(__name__)
 

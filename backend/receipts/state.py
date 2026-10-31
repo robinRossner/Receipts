@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from apps.receipts.db.models import StateEntry
 from core.db import utcnow
+from receipts.db.models import StateEntry
 
 LAST_ARCHIVE_SYNC = "last_archive_sync_at"
 ARCHIVE_DEVICE = "archive_device_id"

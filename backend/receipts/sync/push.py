@@ -21,16 +21,16 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.receipts.db.models import ItemDictionary, LineItem, Receipt
-from apps.receipts.extraction.taxonomy import Path3, get_taxonomy
-from apps.receipts.sync.schemas import (
+from core.db import utcnow
+from receipts.db.models import ItemDictionary, LineItem, Receipt
+from receipts.extraction.taxonomy import Path3, get_taxonomy
+from receipts.sync.schemas import (
     DictionaryIn,
     LineItemIn,
     PushRequest,
     PushResult,
     ReceiptIn,
 )
-from core.db import utcnow
 
 
 @dataclass

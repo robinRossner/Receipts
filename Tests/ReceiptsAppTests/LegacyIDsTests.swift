@@ -1,9 +1,9 @@
 import XCTest
 @testable import ReceiptsApp
 
-/// The UUIDs of existing Mac rows must equal what backend/apps/receipts/migrate_mac_data.py `uid()` makes of
+/// The UUIDs of existing Mac rows must equal what backend/receipts/migrate_mac_data.py `uid()` makes of
 /// them; otherwise the first sync duplicates every receipt. The expected values below were produced by that
-/// Python function (`uv run python -c "from apps.receipts.migrate_mac_data import uid; ..."`).
+/// Python function (`uv run python -c "from receipts.migrate_mac_data import uid; ..."`).
 final class LegacyIDsTests: XCTestCase {
     func testNamespaceMatchesMigrationScript() {
         XCTAssertEqual(LegacyIDs.namespace.uuidString.lowercased(), "0b8f3c52-6d1e-4c7a-9a4e-2f5d8e1b7c63")

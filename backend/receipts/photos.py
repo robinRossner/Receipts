@@ -7,7 +7,7 @@ storage path is built from the receipt UUID only: `<first two chars>/<uuid>.<jpg
 photos directory, so nothing a client sends can name a path.
 
 Nothing in here deletes a photo by age; `delete_photo` is called only by the archive confirmation
-(apps/receipts/archive.py) once the laptop's copy was verified.
+(receipts/archive.py) once the laptop's copy was verified.
 """
 
 from __future__ import annotations

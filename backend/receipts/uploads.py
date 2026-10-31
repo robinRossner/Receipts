@@ -5,7 +5,7 @@ again (a retry after a lost response) changes nothing and answers the current st
 under the same id are a conflict, never an overwrite. The same bytes under another id are a
 duplicate. Accepts JPEG / PNG only, judged by the content (photos.inspect_image), up to
 `receipts_max_photo_bytes`. The file name on disk comes from the UUID alone. A new photo queues an
-extraction (apps/receipts/worker.py).
+extraction (receipts/worker.py).
 """
 
 from __future__ import annotations
@@ -17,11 +17,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from apps.receipts import photos, worker
-from apps.receipts.db.models import Receipt
-from apps.receipts.errors import api_error
-from apps.receipts.settings import ReceiptsSettings
 from core.db import utcnow
+from receipts import photos, worker
+from receipts.db.models import Receipt
+from receipts.errors import api_error
+from receipts.settings import ReceiptsSettings
 
 log = logging.getLogger(__name__)
 

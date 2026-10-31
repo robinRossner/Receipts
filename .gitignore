@@ -9,3 +9,16 @@ local.properties
 android/.gradle/
 android/**/build/
 android/.kotlin/
+
+# server (backend/, deploy/)
+backend/.venv/
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/var/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+deploy/.env
+deploy/data/
+deploy/backups/

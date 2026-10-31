@@ -1,0 +1,54 @@
+# Production stack of the Receipts server on the shared VM.
+#   cd /opt/receipts/deploy && docker compose up -d --build        (deploy/push.sh does this)
+# The database (receipts.db) and the not-yet-archived receipt photos (receipts_photos/) live in
+# ./data (host bind mount) so deploy/backup.sh can snapshot them from the host.
+#
+# This stack has NO reverse proxy and publishes NO host port. TLS and the public domain belong to
+# the Caddy stack that already runs on this VM; it reaches this container over that project's Docker
+# network (below) under the alias `receipts-backend` and routes /api/v1/receipts/* here.
+#
+# The compose project name is pinned: the Caddy stack also lives in a directory called `deploy`,
+# so without it both would be the same compose project (and `up` here would treat that stack's
+# containers as orphans).
+name: receipts
+
+services:
+  # Not called `backend` on purpose: compose adds the service name as a network alias, and the
+  # backend of the Caddy stack already answers to `backend` on the shared network.
+  receipts-backend:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    # run as the host user (push.sh writes APP_UID/APP_GID to deploy/.env) so ./data is writable
+    # for the app and readable for the host-side backup cron (WAL needs write access).
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    env_file:
+      - ../backend/.env.production         # created by deploy/make-prod-env.sh (gitignored)
+    environment:
+      RECEIPTS_DATABASE_URL: sqlite:////app/var/receipts.db
+      RECEIPTS_PHOTOS_DIR: /app/var/receipts_photos
+    volumes:
+      - ./data:/app/var
+    # Only the proxy can reach the backend (no published port), so the peer of every request is the
+    # proxy container in the shared network's private range, which core/settings.py trusts by
+    # default for X-Forwarded-For (the client IP behind the failed-token throttle).
+    expose:
+      - "8000"
+    networks:
+      proxy:
+        aliases:
+          - receipts-backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+networks:
+  # The default network of the Caddy stack on this VM (compose project directory `deploy` ->
+  # project `deploy` -> network `deploy_default`). It must exist, i.e. that stack must be running;
+  # override the name with PROXY_NETWORK in deploy/.env (see deploy/README.md).
+  proxy:
+    name: ${PROXY_NETWORK:-deploy_default}
+    external: true

@@ -4,9 +4,9 @@ from logging.config import fileConfig
 
 from alembic import context
 
-from apps.receipts.db.models import Base
-from apps.receipts.db.session import make_engine
-from apps.receipts.settings import get_settings
+from receipts.db.models import Base
+from receipts.db.session import make_engine
+from receipts.settings import get_settings
 
 config = context.config
 if config.config_file_name is not None:

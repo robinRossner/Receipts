@@ -4,11 +4,10 @@ A native macOS port of the `Receipts_process` project (Python + FastAPI + browse
 same look, same functionality, but a single Swift app with no server process, no browser tab,
 and no Python to install.
 
-> **Where things live.** This repo holds the Mac and iPhone apps (root) and the paused Android app (`android/`).
-> The server they sync with (the receipts backend) is **not** here: its code is in the FitnessBuddy repo at
-> `backend/apps/receipts`, the API contract is `docs/api/receipts.md` there, and deploys happen from that repo
-> (default location `~/Projects/FitnessBuddy`). The e2e tests below start that server from a temp var dir and find it
-> through `RECEIPTS_BACKEND_DIR` (default `$HOME/Projects/FitnessBuddy/backend`).
+> **Where things live.** This repo holds the Mac and iPhone apps (root), the paused Android app (`android/`) and the
+> server they sync with: `backend/` (FastAPI + SQLite, own `pyproject.toml`, `Dockerfile` and Alembic setup), the API
+> contract `docs/api/receipts.md` and the deployment scripts in `deploy/` (see `deploy/README.md`). The e2e tests below
+> start that server from a temp var dir; `RECEIPTS_BACKEND_DIR` (default: this repo's `backend/`) points them at another copy.
 
 ## Run it
 
@@ -58,8 +57,7 @@ classification_log.jsonl).
 
 ## Cloud sync (optional)
 
-**Settings ▸ Cloud sync** connects the app to the shared backend (`docs/api/receipts.md` in the
-FitnessBuddy repo): server URL, the receipts token (kept in the Keychain), a switch and *Test connection*. With the
+**Settings ▸ Cloud sync** connects the app to the shared backend (`docs/api/receipts.md`): server URL, the receipts token (kept in the Keychain), a switch and *Test connection*. With the
 switch **off** nothing changes: everything is local and photos are read by the AI backend you chose.
 With it **on**:
 
@@ -79,7 +77,7 @@ With it **on**:
   when the Mac has not synced for 30 days.
 
 Existing receipts keep their numeric ids locally; migration 7 gives every row the UUID that
-`backend/apps/receipts/migrate_mac_data.py` (FitnessBuddy repo) derives from it (`LegacyIDs`, pinned by tests), so the first
+`backend/receipts/migrate_mac_data.py` derives from it (`LegacyIDs`, pinned by tests), so the first
 sync against a migrated server creates no duplicates. Edits are tracked by SQLite triggers
 (`Sync/SyncSchema.swift`).
 
@@ -126,7 +124,7 @@ Mac as `http://localhost:8000` (Debug builds). `RECEIPTS_APP_DATA_DIR` moves the
 ### Install it on your iPhone
 
 1. `cp Config/Local.xcconfig.example Config/Local.xcconfig` (gitignored) and put your Apple Developer team id in
-   `DEVELOPMENT_TEAM`, the same file layout as `ios/` in the FitnessBuddy repo. (That one's team id works here too.)
+   `DEVELOPMENT_TEAM`.
 2. Plug the iPhone in, unlock it, enable **Settings > Privacy & Security > Developer Mode** (iOS 16+, restarts the
    phone), and trust the Mac when asked.
 3. In Xcode pick the `ReceiptsiOS` scheme and your iPhone as destination and press ⌘R (or
@@ -153,13 +151,30 @@ simulator: set up and test the connection, add two photos (JPEG + HEIC added wit
 picker, seed the extraction, edit an item and confirm, check on the server that the edit arrived, let the Mac sync engine
 archive the photos (`ArchiveHelperTests`), clear the phone's cached photos and see "on your laptop", then a screen tour
 in light and dark mode (screenshots in `shots_dir`). `Tests/ios-e2e/banners.sh` does the same with the server's
-archive-overdue and disk-warning thresholds forced on, to see the banners. Needs `uv` + `uv sync` in the FitnessBuddy `backend/` (found via `RECEIPTS_BACKEND_DIR`, default
-`$HOME/Projects/FitnessBuddy/backend`, clear error if missing), Xcode and
-the simulator; it uses a copy of nothing real (no `backend/var`, no real app data). `MacRenderTests` draws the Mac's
+archive-overdue and disk-warning thresholds forced on, to see the banners. Needs `uv` + `uv sync` in `backend/` (found via `RECEIPTS_BACKEND_DIR`, default this repo's `backend/`,
+clear error if missing), Xcode and the simulator; it uses a copy of nothing real (no `backend/var`, no real app data). `MacRenderTests` draws the Mac's
 Settings > Cloud sync and main window (with the banners) to PNG files in-process (`MAC_RENDER_DIR=...`).
 
 `Tests/run-e2e.sh` runs the Swift sync engine against the real backend (uvicorn from a temp var dir, dummy
 token, no Claude credentials, extraction finished through the backend's fake provider): migrate Mac data
 with `migrate_mac_data.py`, first sync without duplicates, upload, pull, download, confirm, server file gone,
-local file intact. Needs `uv` and the backend's venv (`uv sync` in the FitnessBuddy `backend/`; `RECEIPTS_BACKEND_DIR`, default
-`$HOME/Projects/FitnessBuddy/backend`).
+local file intact. Needs `uv` and the backend's venv (`uv sync` in `backend/`; `RECEIPTS_BACKEND_DIR`, default this repo's `backend/`).
+
+## Server (`backend/`)
+
+The sync server is a self-contained FastAPI app: `server.py` (entry point), `receipts/` (API, extraction queue and
+worker, LLM providers, sync, photo archive, Mac data migration, Alembic migrations in `receipts/alembic/`) and `core/`
+(bearer auth with a failed-token throttle, settings base, db helpers, log redaction, scheduler helper). Routes live under
+`/api/v1/receipts/...` plus a public `/health`; every receipts route needs `RECEIPTS_API_TOKEN` (no other token is
+accepted). Contract: `docs/api/receipts.md`.
+
+    cd backend
+    uv sync
+    cp .env.example .env              # optional, see the comments inside (gitignored)
+    uv run alembic upgrade head       # creates var/receipts.db
+    uv run uvicorn server:app --reload
+    uv run pytest -q                  # no network, no real Claude call
+    uv run ruff check . && uv run ruff format --check .
+
+State lives in `backend/var/` (`receipts.db`, `receipts_photos/`). Production runs the same code in Docker on a VM
+(`deploy/`, runbook in `deploy/README.md`); the production data directory is `/opt/receipts/deploy/data`.

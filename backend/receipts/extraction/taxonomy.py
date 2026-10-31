@@ -1,5 +1,5 @@
 """The category taxonomy and its keyword rules (port of Models/Taxonomy.swift; data in
-apps/receipts/data/category_taxonomy.json, a copy of the Mac app's resource).
+receipts/data/category_taxonomy.json, a copy of the Mac app's resource).
 
 Order matters: the taxonomy is shown to the LLM as a numbered list and used by client pickers, so
 the JSON key order is preserved. Keyword rules are evaluated in order, the first match wins.
@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from apps.receipts.settings import get_settings
+from receipts.settings import get_settings
 
 FALLBACK_PATH = ("Other", "Miscellaneous", "General")
 

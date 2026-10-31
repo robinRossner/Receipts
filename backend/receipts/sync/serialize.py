@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.receipts.db.models import ItemDictionary, LineItem, Receipt
 from core.db import iso_z
+from receipts.db.models import ItemDictionary, LineItem, Receipt
 
 
 def receipt_out(r: Receipt) -> dict[str, Any]:
