@@ -1,0 +1,450 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "8f4e5be43fa43870353bce149c431267",
+    "entities": [
+      {
+        "tableName": "receipts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uuid` TEXT NOT NULL, `store` TEXT, `date` TEXT, `time` TEXT, `total` REAL, `computedSum` REAL, `needsReview` INTEGER NOT NULL, `reviewReasons` TEXT NOT NULL, `reviewedAt` TEXT, `createdAt` TEXT NOT NULL, `updatedAt` TEXT NOT NULL, `deletedAt` TEXT, `photoLocation` TEXT, `photoSha256` TEXT, `photoBytes` INTEGER, `photoMediaType` TEXT, `archivedAt` TEXT, `extractionStatus` TEXT, `extractionError` TEXT, `localPhoto` TEXT, `imageHash` TEXT, `purged` INTEGER NOT NULL, `syncState` TEXT NOT NULL, `syncError` TEXT, PRIMARY KEY(`uuid`))",
+        "fields": [
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "store",
+            "columnName": "store",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "time",
+            "columnName": "time",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "total",
+            "columnName": "total",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "computedSum",
+            "columnName": "computedSum",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "needsReview",
+            "columnName": "needsReview",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reviewReasons",
+            "columnName": "reviewReasons",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reviewedAt",
+            "columnName": "reviewedAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "photoLocation",
+            "columnName": "photoLocation",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "photoSha256",
+            "columnName": "photoSha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "photoBytes",
+            "columnName": "photoBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "photoMediaType",
+            "columnName": "photoMediaType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "archivedAt",
+            "columnName": "archivedAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "extractionStatus",
+            "columnName": "extractionStatus",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "extractionError",
+            "columnName": "extractionError",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "localPhoto",
+            "columnName": "localPhoto",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "imageHash",
+            "columnName": "imageHash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "purged",
+            "columnName": "purged",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "syncState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncError",
+            "columnName": "syncError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uuid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_receipts_syncState",
+            "unique": false,
+            "columnNames": [
+              "syncState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receipts_syncState` ON `${TABLE_NAME}` (`syncState`)"
+          },
+          {
+            "name": "index_receipts_date",
+            "unique": false,
+            "columnNames": [
+              "date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receipts_date` ON `${TABLE_NAME}` (`date`)"
+          },
+          {
+            "name": "index_receipts_imageHash",
+            "unique": false,
+            "columnNames": [
+              "imageHash"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_receipts_imageHash` ON `${TABLE_NAME}` (`imageHash`)"
+          }
+        ]
+      },
+      {
+        "tableName": "line_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uuid` TEXT NOT NULL, `receiptId` TEXT NOT NULL, `itemDictionaryId` TEXT NOT NULL, `position` INTEGER NOT NULL, `rawText` TEXT, `nameDe` TEXT, `quantity` REAL NOT NULL, `unitPrice` REAL NOT NULL, `totalPrice` REAL NOT NULL, `priceNormalized` INTEGER NOT NULL, `updatedAt` TEXT NOT NULL, `deletedAt` TEXT, `syncState` TEXT NOT NULL, `syncError` TEXT, PRIMARY KEY(`uuid`))",
+        "fields": [
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receiptId",
+            "columnName": "receiptId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemDictionaryId",
+            "columnName": "itemDictionaryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawText",
+            "columnName": "rawText",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nameDe",
+            "columnName": "nameDe",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPrice",
+            "columnName": "unitPrice",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalPrice",
+            "columnName": "totalPrice",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priceNormalized",
+            "columnName": "priceNormalized",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "syncState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncError",
+            "columnName": "syncError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uuid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_line_items_receiptId",
+            "unique": false,
+            "columnNames": [
+              "receiptId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_line_items_receiptId` ON `${TABLE_NAME}` (`receiptId`)"
+          },
+          {
+            "name": "index_line_items_itemDictionaryId",
+            "unique": false,
+            "columnNames": [
+              "itemDictionaryId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_line_items_itemDictionaryId` ON `${TABLE_NAME}` (`itemDictionaryId`)"
+          },
+          {
+            "name": "index_line_items_syncState",
+            "unique": false,
+            "columnNames": [
+              "syncState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_line_items_syncState` ON `${TABLE_NAME}` (`syncState`)"
+          }
+        ]
+      },
+      {
+        "tableName": "item_dictionary",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uuid` TEXT NOT NULL, `canonicalName` TEXT NOT NULL, `displayNameDe` TEXT, `translationEn` TEXT, `category` TEXT, `subcategory` TEXT, `itemGroup` TEXT, `aliases` TEXT NOT NULL, `isManualOverride` INTEGER NOT NULL, `needsReview` INTEGER NOT NULL, `timesSeen` INTEGER NOT NULL, `createdAt` TEXT, `lastSeenAt` TEXT, `updatedAt` TEXT NOT NULL, `deletedAt` TEXT, `syncState` TEXT NOT NULL, `syncError` TEXT, PRIMARY KEY(`uuid`))",
+        "fields": [
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canonicalName",
+            "columnName": "canonicalName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayNameDe",
+            "columnName": "displayNameDe",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "translationEn",
+            "columnName": "translationEn",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subcategory",
+            "columnName": "subcategory",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "itemGroup",
+            "columnName": "itemGroup",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "aliases",
+            "columnName": "aliases",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isManualOverride",
+            "columnName": "isManualOverride",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "needsReview",
+            "columnName": "needsReview",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timesSeen",
+            "columnName": "timesSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastSeenAt",
+            "columnName": "lastSeenAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAt",
+            "columnName": "deletedAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "syncState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncError",
+            "columnName": "syncError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uuid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_item_dictionary_canonicalName",
+            "unique": false,
+            "columnNames": [
+              "canonicalName"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_item_dictionary_canonicalName` ON `${TABLE_NAME}` (`canonicalName`)"
+          },
+          {
+            "name": "index_item_dictionary_syncState",
+            "unique": false,
+            "columnNames": [
+              "syncState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_item_dictionary_syncState` ON `${TABLE_NAME}` (`syncState`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `value` TEXT, PRIMARY KEY(`key`))",
+        "fields": [
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "key"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8f4e5be43fa43870353bce149c431267')"
+    ]
+  }
+}
