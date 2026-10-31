@@ -1,9 +1,9 @@
 """E2E test hook: finish the receipts' queued extractions with the test suite's scripted fake provider.
 
-Run from `backend/` against the SAME environment as the e2e server (temp RECEIPTS_DATABASE_URL, no Claude
+Run from the FitnessBuddy repo's `backend/` (RECEIPTS_BACKEND_DIR) against the SAME environment as the e2e server (temp RECEIPTS_DATABASE_URL, no Claude
 credentials), with the server's worker thread disabled (`RECEIPTS_WORKER_ENABLED=false`):
 
-    uv run python ../clients/receipts-apple/Tests/e2e/seed_extractions.py
+    uv run python "<Receipts App>/Tests/e2e/seed_extractions.py"
 
 It uses `worker.run_next` with `tests.receipts_helpers.FakeProvider`, the same hook the backend's own tests use,
 so no Claude call is ever made. Prints how many jobs it finished.

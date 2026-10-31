@@ -4,3 +4,8 @@
 xcuserdata/
 *.xcuserstate
 DerivedData/
+Config/Local.xcconfig
+local.properties
+android/.gradle/
+android/**/build/
+android/.kotlin/

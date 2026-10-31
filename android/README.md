@@ -2,6 +2,8 @@
 
 **Status: paused.** The app is partly built; work stopped so the iPhone UI can be finished first and its changes ported afterwards.
 
+**Server and contract.** This app syncs with the receipts server, which lives in the FitnessBuddy repo (default `~/Projects/FitnessBuddy`): code in `backend/apps/receipts`, API contract in `docs/api/receipts.md`; deploys happen from there. This repo (`~/Projects/Receipts App`) holds the Mac and iPhone apps at its root and this Android app in `android/`.
+
 Done (compiles, `./gradlew assembleDebug` works, nothing run on a device yet):
 - Gradle project (AGP 9.4.1, Kotlin 2.3.21, Compose Material 3, Room, WorkManager, OkHttp, ML Kit Document Scanner), minSdk 26, package `com.robinrossner.receipts`; HTTPS only, plain HTTP to `10.0.2.2`/localhost in debug builds only (debug network security config).
 - Wire types, API client, `CapabilityGuardedApi` (the phone never calls archive-pending, archive-confirm, archive/sync, never sends `accept_failed`), server URL rules.

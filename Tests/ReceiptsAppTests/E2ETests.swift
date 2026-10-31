@@ -13,11 +13,11 @@ final class E2ETests: XCTestCase {
     private var port = 0
     private let token = "e2e-dummy-receipts-token"
 
+    /// The server code lives in the FitnessBuddy repo: RECEIPTS_BACKEND_DIR, default ~/Projects/FitnessBuddy/backend.
     private var backendDir: URL {
-        if let override = ProcessInfo.processInfo.environment["RECEIPTS_E2E_BACKEND_DIR"] { return URL(fileURLWithPath: override) }
-        // .../clients/receipts-apple/Tests/ReceiptsAppTests/E2ETests.swift -> .../backend
-        return URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("backend")
+        let env = ProcessInfo.processInfo.environment
+        let path = env["RECEIPTS_BACKEND_DIR"] ?? (NSHomeDirectory() + "/Projects/FitnessBuddy/backend")
+        return URL(fileURLWithPath: path)
     }
     private var seedScript: String {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("e2e/seed_extractions.py").path
@@ -27,6 +27,11 @@ final class E2ETests: XCTestCase {
 
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["RECEIPTS_E2E"] == "1", "set RECEIPTS_E2E=1 (Tests/run-e2e.sh)")
+        guard FileManager.default.fileExists(atPath: backendDir.appendingPathComponent("apps/receipts").path) else {
+            throw NSError(domain: "E2ETests", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                "Server code not found at \(backendDir.path) (expected apps/receipts inside). It lives in the FitnessBuddy repo: "
+                + "set RECEIPTS_BACKEND_DIR=/path/to/FitnessBuddy/backend"])
+        }
         root = try makeTempDir("receipts-e2e")
     }
 
