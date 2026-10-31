@@ -63,7 +63,7 @@ enum LegacyDB {
             INSERT INTO item_dictionary (id, canonical_name, display_name_de, translation_en, category, subcategory, item_group, aliases, is_manual_override, created_at, last_seen_at) VALUES
             (1, 'bio eier', 'Bio Eier', 'organic eggs', 'Food', 'Dairy & Eggs', 'Eggs', '["bio eier 10er"]', 1, '2026-01-05T10:00:00Z', '2026-02-01T08:30:00Z'),
             (2, 'milch', 'Milch', 'milk', 'Food', 'Dairy & Eggs', 'Milk', '[]', 0, '2026-01-06 11:00:00', NULL),
-            (3, 'pfand', 'Pfand', 'deposit', 'Other', 'Deposits', 'General', '[]', 0, NULL, NULL)
+            (3, 'pfand', 'Pfand', 'deposit', 'Other', 'Deposits & Refunds', 'Pfand', '[]', 0, NULL, NULL)
             """)
         try exec(db, """
             INSERT INTO receipts (id, store, date, time, total, computed_sum, needs_review, review_reasons, source_image, created_at, reviewed_at, deleted_at) VALUES

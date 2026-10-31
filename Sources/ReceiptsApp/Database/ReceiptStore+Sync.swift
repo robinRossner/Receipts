@@ -76,7 +76,8 @@ extension ReceiptStore {
         switch prepared {
         case .success(let bytes): data = bytes
         case .failure(let error):
-            setState(.failed("\(error.localizedDescription) Try a clearer, flatter photo."), for: id)
+            let hint = error is ScanError ? "" : " Try a clearer, flatter photo."
+            setState(.failed("\(error.localizedDescription)\(hint)"), for: id)
             return
         }
 

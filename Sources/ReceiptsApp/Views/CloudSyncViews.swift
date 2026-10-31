@@ -178,6 +178,10 @@ struct CloudSyncSettingsView: View {
                     if sync.unsentChanges > 0 {
                         LabeledContent("Not sent yet") { Text("\(sync.unsentChanges) change(s)") }
                     }
+                    if sync.rejectedRecords > 0 {
+                        LabeledContent("Refused by the server") { Text("\(sync.rejectedRecords) record(s)") }
+                        Text("Edit such a record again to send it again.").font(.caption).foregroundStyle(.secondary)
+                    }
                     if let error = sync.lastError {
                         Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
                     }

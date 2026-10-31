@@ -118,15 +118,16 @@ struct PhotoArchiver: Sendable {
             throw error
         }
         try await store.markArchived(uuid: photo.id, path: storedPath)
-        removeOutboxCopy(previous: info?.sourceImage, keeping: storedPath)
+        removeOutboxCopy(uuid: photo.id)
         report.archived.append(photo.id)
     }
 
-    /// The prepared upload copy is redundant once the archive copy is confirmed.
-    private func removeOutboxCopy(previous: String?, keeping: String) {
-        guard let previous, previous != keeping, let url = paths.resolve(previous),
-              url.deletingLastPathComponent().standardizedFileURL.path == paths.outboxDir.standardizedFileURL.path else { return }
-        fileSystem.remove(url)
+    /// The prepared upload copy (`uploads_outbox/<uuid>.jpg|png`) is redundant once the archive copy is confirmed.
+    private func removeOutboxCopy(uuid: String) {
+        for ext in ["jpg", "png"] {
+            let url = paths.outboxDir.appendingPathComponent("\(uuid).\(ext)")
+            if fileSystem.exists(url) { fileSystem.remove(url) }
+        }
     }
 
     enum ArchiveError: Error, LocalizedError, Equatable {

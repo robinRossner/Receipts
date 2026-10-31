@@ -22,10 +22,13 @@ final class SyncCoordinator: ObservableObject {
     /// Set when this Mac has not synced for 30 days while sync is on.
     @Published private(set) var staleSyncWarning: String?
     @Published private(set) var lastReport: SyncReport?
+    /// Records the server refused (shown in Settings; editing such a record sends it again).
+    @Published private(set) var rejectedRecords = 0
 
     let store: SyncStore
     private let defaults: UserDefaults
     private let makeAPI: (URL, String) -> ReceiptsAPI
+    private let tokenProvider: () -> String?
     private let reminders: ReminderScheduling
     private let fileSystem: ArchiveFileSystem
     /// Called after a run changed local data, so lists reload.
@@ -46,13 +49,15 @@ final class SyncCoordinator: ObservableObject {
 
     init(store: SyncStore, defaults: UserDefaults = .standard, fileSystem: ArchiveFileSystem = DiskFileSystem(),
          reminders: ReminderScheduling = NoReminders(),
+         tokenProvider: @escaping () -> String? = { KeychainStore.read(.receiptsAPIToken) },
          makeAPI: @escaping (URL, String) -> ReceiptsAPI = { URLSessionReceiptsAPI(baseURL: $0, token: $1) }) {
         self.store = store
         self.defaults = defaults
         self.fileSystem = fileSystem
         self.reminders = reminders
         self.makeAPI = makeAPI
-        self.settings = SyncSettings.load(from: defaults)
+        self.tokenProvider = tokenProvider
+        self.settings = SyncSettings.load(from: defaults, token: tokenProvider())
     }
 
     var isEnabled: Bool { settings.enabled }
@@ -90,7 +95,7 @@ final class SyncCoordinator: ObservableObject {
 
     /// Reads the settings and (re)starts or stops everything. Call at launch and after the settings changed.
     func configure() {
-        let new = SyncSettings.load(from: defaults)
+        let new = SyncSettings.load(from: defaults, token: tokenProvider())
         let changed = new != settings || engine == nil
         settings = new
         guard new.enabled else {
@@ -156,6 +161,7 @@ final class SyncCoordinator: ObservableObject {
         lastReport = report
         if let status = report.status { serverStatus = status }
         unsentChanges = (try? await store.unsentChangeCount()) ?? 0
+        rejectedRecords = (try? await store.rejectedCount()) ?? 0
         if report.succeeded || !report.connectionProblem {
             await loadLastSync()
             refreshStaleness()

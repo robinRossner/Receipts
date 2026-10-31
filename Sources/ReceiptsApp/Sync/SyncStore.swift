@@ -89,6 +89,15 @@ struct SyncStore: Sendable {
         return row?.int(0) ?? 0
     }
 
+    /// Records the server refused and that wait for the user to edit them again.
+    func rejectedCount() async throws -> Int {
+        try await db.queryOne("""
+            SELECT (SELECT COUNT(*) FROM receipts WHERE sync_state = 'rejected')
+                 + (SELECT COUNT(*) FROM line_items WHERE sync_state = 'rejected')
+                 + (SELECT COUNT(*) FROM item_dictionary WHERE sync_state = 'rejected')
+            """)?.int(0) ?? 0
+    }
+
     /// Receipts the server is still working on or that wait for their upload (the app polls while > 0).
     func inFlightCount() async throws -> Int {
         try await db.queryOne("""
