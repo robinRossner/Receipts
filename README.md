@@ -17,6 +17,10 @@ Locally", works fine.
 (`Package.swift` is still in this folder too, purely so I can keep iterating from the command
 line with `swift build` - you don't need it. Both point at the exact same `Sources/` files.)
 
+`Receipts.xcodeproj` is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) and the
+generated project is committed, so opening it needs no tools; after changing `project.yml` run `xcodegen generate`.
+It holds the Mac app (`ReceiptsApp`) and the iPhone app (`ReceiptsiOS`, below).
+
 The Mac app keeps its data in `~/Library/Application Support/ReceiptsApp/` (receipts.db, receipts_archive/,
 classification_log.jsonl).
 
@@ -73,13 +77,80 @@ Existing receipts keep their numeric ids locally; migration 7 gives every row th
 sync against a migrated server creates no duplicates. Edits are tracked by SQLite triggers
 (`Sync/SyncSchema.swift`).
 
-The sync code lives in `Sources/ReceiptsApp/Sync/` and uses no AppKit, so the iOS app can share it.
+The sync code lives in `Sources/ReceiptsApp/Sync/` and uses no AppKit; the iPhone app uses it unchanged.
+
+## iPhone app
+
+`ReceiptsiOS` (bundle id `com.robinrossner.receipts`, iOS 17+, iPhone) is the phone front end of the same backend. It
+photographs receipts, the **server** reads them, and the result comes back through sync; there is no AI on the phone
+(no Ollama, no Claude CLI, no API key). It shares `Sources/ReceiptsApp/` with the Mac app (sync engine, SQLite store,
+models, theme, detail/item/overview views; platform differences sit behind `#if os(...)`), and has its own screens in
+`Sources/ReceiptsiOS/`. Files the phone build leaves out are listed under `excludes` in `project.yml`.
+
+- **Setup** (Settings tab): server URL (HTTPS; plain `http://localhost` works in Debug builds only, and Release has no
+  App Transport Security exception at all) and the receipts token (iOS Keychain), *Test connection*, then it syncs.
+- **Capture**: the VisionKit document camera (finds and straightens the page; a multi-page scan adds only the first
+  page, because a receipt is one photo; not available in the simulator) and the photo library (several at once, HEIC
+  included). Photos are straightened (`DocumentScanner`, falling back to the upright photo when no outline is found),
+  converted to JPEG (at most 2500 px, under 4.5 MB), stored in `uploads_outbox/` and uploaded idempotently by receipt
+  UUID, so offline captures wait and uploads resume after a relaunch.
+- **Review**: list with search and filters, needs-review first, pull to refresh; detail with Items/Photo tabs, editable
+  header, items, categories, add/delete item, *Looks good* moves on to the next receipt; waiting/reading/failed states with
+  retry (retry on the phone only re-queues the extraction on the server). Overview with the charts, range picker and
+  drill-down. Same colours as the Mac app, with a dark counterpart.
+- **Sync** at launch, when the app comes to the foreground, a few seconds after edits, on pull to refresh and every
+  15 minutes while open, with the Mac's engine and merge rules. Banners show the server's `archive_overdue` and `disk_warning`.
+- **The phone is not the archive.** It never calls `archive/pending`, `archive-confirm` or `archive/sync` and never
+  sends `accept_failed`: the sync engine talks to the server through `CapabilityGuardedAPI`, which refuses those calls
+  for a device without `SyncCapabilities.archivesPhotos` (tests: `CapabilityTests`). The phone keeps a bounded cache of
+  photos (`photo_cache/`, 300 MB, oldest dropped first; uploaded photos go there, others are downloaded when opened). A
+  photo the server released to the laptop and that is not cached shows "This photo is on your laptop."
+- **Left out of this first version**: editing the item dictionary (Mac only; changes sync to the phone), CSV/JSON export,
+  backups, "Give up and archive" for failed receipts (Mac only, it is the only place `accept_failed` is sent),
+  re-categorizing items (needs an AI), merging a multi-page scan.
+
+### Run it in the simulator
+
+```
+cd clients/receipts-apple
+xcodebuild -project Receipts.xcodeproj -scheme ReceiptsiOS -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+```
+or open `Receipts.xcodeproj`, pick the `ReceiptsiOS` scheme and an iPhone, ⌘R. The simulator reaches a backend on the
+Mac as `http://localhost:8000` (Debug builds). `RECEIPTS_APP_DATA_DIR` moves the app's data directory.
+
+### Install it on your iPhone
+
+1. `cp Config/Local.xcconfig.example Config/Local.xcconfig` (gitignored) and put your Apple Developer team id in
+   `DEVELOPMENT_TEAM`, the same file layout as `clients/fitness-ios/`. (That one's team id works here too.)
+2. Plug the iPhone in, unlock it, enable **Settings > Privacy & Security > Developer Mode** (iOS 16+, restarts the
+   phone), and trust the Mac when asked.
+3. In Xcode pick the `ReceiptsiOS` scheme and your iPhone as destination and press ⌘R (or
+   `xcodebuild -project Receipts.xcodeproj -scheme ReceiptsiOS -configuration Release -destination 'generic/platform=iOS' -allowProvisioningUpdates build`
+   and install the app from Xcode's Devices window). The first launch may need **Settings > General > VPN & Device
+   Management > Developer App > Trust**. With a free account the app expires after 7 days and must be reinstalled.
+4. In the app: Settings tab, enter the server's HTTPS address (`https://<domain>`, no path) and the receipts token
+   (`RECEIPTS_API_TOKEN` of the backend), *Save*, *Test connection*. The Release build refuses `http://` addresses.
+
+The Mac stays the photo archive: keep syncing it at least every 30 days (see above).
 
 ## Tests
 
 `swift test` (unit tests: UUID compatibility, schema migration and triggers, last-write-wins, upload queue,
 archive never confirming on a mismatch or full disk, atomic writes, coordinator). `RECEIPTS_APP_DATA_DIR`
 moves the app's data directory (tests use temp dirs; never the real one).
+
+iPhone: `xcodebuild test -project Receipts.xcodeproj -scheme ReceiptsiOS -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:ReceiptsiOSTests`
+runs the shared unit tests plus the phone's own on the simulator.
+
+`Tests/ios-e2e/run.sh [shots_dir]` is the iPhone end-to-end run: the real backend from a temp var dir (dummy token, no
+Claude credentials, extraction finished by `Tests/e2e/seed_extractions.py`) and XCUITests on the `iPhone 17 Pro`
+simulator: set up and test the connection, add two photos (JPEG + HEIC added with `simctl addmedia`) from the photo
+picker, seed the extraction, edit an item and confirm, check on the server that the edit arrived, let the Mac sync engine
+archive the photos (`ArchiveHelperTests`), clear the phone's cached photos and see "on your laptop", then a screen tour
+in light and dark mode (screenshots in `shots_dir`). `Tests/ios-e2e/banners.sh` does the same with the server's
+archive-overdue and disk-warning thresholds forced on, to see the banners. Needs `uv` + `cd backend && uv sync`, Xcode and
+the simulator; it uses a copy of nothing real (no `backend/var`, no real app data). `MacRenderTests` draws the Mac's
+Settings > Cloud sync and main window (with the banners) to PNG files in-process (`MAC_RENDER_DIR=...`).
 
 `Tests/run-e2e.sh` runs the Swift sync engine against the real backend (uvicorn from a temp var dir, dummy
 token, no Claude credentials, extraction finished through the backend's fake provider): migrate Mac data
