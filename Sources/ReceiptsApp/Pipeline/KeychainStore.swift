@@ -21,7 +21,16 @@ enum KeychainStore {
         ]
     }
 
+    /// Test seam: with `RECEIPTS_APP_DATA_DIR` set (a test or e2e run with its own data directory) the receipts token
+    /// comes from `RECEIPTS_APP_TOKEN` and no other secret is readable, so such a run never touches the real Keychain.
+    private static func testModeToken(_ account: Account) -> String?? {
+        let env = ProcessInfo.processInfo.environment
+        guard let dir = env["RECEIPTS_APP_DATA_DIR"], !dir.isEmpty else { return nil }
+        return .some(account == .receiptsAPIToken ? env["RECEIPTS_APP_TOKEN"] : nil)
+    }
+
     static func read(_ account: Account) -> String? {
+        if let forced = testModeToken(account) { return forced }
         var query = baseQuery(account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne

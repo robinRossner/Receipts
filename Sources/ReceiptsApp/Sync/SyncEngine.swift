@@ -46,7 +46,7 @@ actor SyncEngine {
     let api: ReceiptsAPI
     let store: SyncStore
     let config: SyncConfig
-    let photoCache: PhotoCache
+    nonisolated let photoCache: PhotoCache
     private let archiver: PhotoArchiver
     private var current: Task<SyncReport, Never>?
     /// A push answered `stale` for a record we thought was ahead: the server holds something newer that may sit

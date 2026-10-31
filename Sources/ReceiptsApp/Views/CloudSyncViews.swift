@@ -62,7 +62,7 @@ struct SyncBannersView: View {
             }
             .padding(.horizontal, bannerPadding)
             .padding(.vertical, 8)
-            .background(AppTheme.penRedBg)
+            .background(AppTheme.penRedBg.ignoresSafeArea(edges: .top))
         }
     }
 }

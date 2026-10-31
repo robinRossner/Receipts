@@ -25,9 +25,11 @@ enum ScanError: Error, LocalizedError {
 /// installed `pillow_heif` but never called `register_heif_opener()` (why the .heic files in
 /// uploads_incoming got stuck).
 enum DocumentScanner {
-    static func scan(imagePath: String) throws -> CIImage {
+    /// - `minConfidence`: an outline Vision itself is not sure about counts as "no document" (the iOS simulator's Vision
+    ///   answers with a made-up full-frame rectangle of confidence 0; real devices report a real confidence).
+    static func scan(imagePath: String, minConfidence: Float = 0) throws -> CIImage {
         let uprightImage = try load(imagePath: imagePath)
-        let corners = try detectDocumentCorners(in: uprightImage)
+        let corners = try detectDocumentCorners(in: uprightImage, minConfidence: minConfidence)
         return warp(uprightImage, to: corners)
     }
 
@@ -58,12 +60,12 @@ enum DocumentScanner {
     /// Vision's VNRectangleObservation already returns semantically-labeled corners
     /// (topLeft/topRight/etc.), so no manual corner-sorting is needed here - unlike
     /// order_points() in the Python version, which had to sort DocAligner's unordered points.
-    private static func detectDocumentCorners(in image: CIImage) throws -> (topLeft: CGPoint, topRight: CGPoint, bottomRight: CGPoint, bottomLeft: CGPoint) {
+    private static func detectDocumentCorners(in image: CIImage, minConfidence: Float) throws -> (topLeft: CGPoint, topRight: CGPoint, bottomRight: CGPoint, bottomLeft: CGPoint) {
         let request = VNDetectDocumentSegmentationRequest()
         let handler = VNImageRequestHandler(ciImage: image, options: [:])
         try handler.perform([request])
 
-        guard let result = request.results?.first as? VNRectangleObservation else {
+        guard let result = request.results?.first as? VNRectangleObservation, result.confidence >= minConfidence else {
             throw ScanError.noDocumentFound
         }
 

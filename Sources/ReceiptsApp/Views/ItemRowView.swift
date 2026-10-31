@@ -64,10 +64,14 @@ struct ItemRowView: View {
                 TextField("", text: $qtyText)
                     .frame(width: 56)
                     .decimalKeyboard()
+                    .accessibilityLabel("Quantity")
+                    .accessibilityIdentifier("qtyField")
                 Text("×").foregroundColor(AppTheme.inkSoft)
                 TextField("", text: $priceText)
                     .frame(width: 64)
                     .decimalKeyboard()
+                    .accessibilityLabel("Unit price")
+                    .accessibilityIdentifier("priceField")
                 Text("=").foregroundColor(AppTheme.inkSoft)
                 Text(previewTotal)
                     .fontWeight(.semibold)
@@ -105,6 +109,7 @@ struct ItemRowView: View {
                 // to) instead of truncating this button's label.
                 Button(saveLabel) { Task { await save() } }
                     .disabled(saveState == .saving)
+                    .accessibilityIdentifier("saveItemButton")
                     .fixedSize()
 
                 Button {
@@ -136,33 +141,51 @@ struct ItemRowView: View {
         #if os(macOS)
         HStack(spacing: 6) { pickers(labelled: false) }
         #else
-        VStack(alignment: .leading, spacing: 2) { pickers(labelled: true) }
+        VStack(spacing: 0) { pickers(labelled: true) }
         #endif
     }
 
     @ViewBuilder
     private func pickers(labelled: Bool) -> some View {
-        Picker(labelled ? "Category" : "", selection: $category) {
-            ForEach(store.taxonomy.categoryNames(), id: \.self) { Text($0).tag($0) }
+        pickerRow("Category", labelled: labelled) {
+            Picker("Category", selection: $category) {
+                ForEach(store.taxonomy.categoryNames(), id: \.self) { Text($0).tag($0) }
+            }
+            .frame(minWidth: 90, idealWidth: 130)
+            .onChange(of: category) {
+                subcategory = store.taxonomy.subcategoryNames(in: category).first ?? ""
+                itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
+            }
         }
-        .frame(minWidth: 90, idealWidth: 130)
-        .onChange(of: category) {
-            subcategory = store.taxonomy.subcategoryNames(in: category).first ?? ""
-            itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
+        pickerRow("Subcategory", labelled: labelled) {
+            Picker("Subcategory", selection: $subcategory) {
+                ForEach(store.taxonomy.subcategoryNames(in: category), id: \.self) { Text($0).tag($0) }
+            }
+            .frame(minWidth: 90, idealWidth: 140)
+            .onChange(of: subcategory) {
+                itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
+            }
         }
+        pickerRow("Item group", labelled: labelled) {
+            Picker("Item group", selection: $itemGroup) {
+                ForEach(store.taxonomy.itemGroups(category: category, subcategory: subcategory), id: \.self) { Text($0).tag($0) }
+            }
+            .frame(minWidth: 90, idealWidth: 140)
+        }
+    }
 
-        Picker(labelled ? "Subcategory" : "", selection: $subcategory) {
-            ForEach(store.taxonomy.subcategoryNames(in: category), id: \.self) { Text($0).tag($0) }
+    /// Mac: the bare picker. Phone: a titled row (label left, current value right) so the three levels read clearly.
+    @ViewBuilder
+    private func pickerRow<P: View>(_ title: String, labelled: Bool, @ViewBuilder picker: () -> P) -> some View {
+        if labelled {
+            HStack {
+                Text(title).foregroundColor(AppTheme.inkSoft)
+                Spacer()
+                picker().labelsHidden().tint(AppTheme.ink)
+            }
+        } else {
+            picker().labelsHidden()
         }
-        .frame(minWidth: 90, idealWidth: 140)
-        .onChange(of: subcategory) {
-            itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
-        }
-
-        Picker(labelled ? "Item group" : "", selection: $itemGroup) {
-            ForEach(store.taxonomy.itemGroups(category: category, subcategory: subcategory), id: \.self) { Text($0).tag($0) }
-        }
-        .frame(minWidth: 90, idealWidth: 140)
     }
 
     private func save() async {

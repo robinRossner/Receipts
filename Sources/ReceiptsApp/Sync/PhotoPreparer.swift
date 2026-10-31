@@ -31,7 +31,7 @@ enum PhotoPreparer {
     static func prepare(imagePath: String, straighten: Bool = true, allowUnstraightened: Bool = false) throws -> Data {
         guard straighten else { return try encode(try DocumentScanner.load(imagePath: imagePath)) }
         do {
-            return try encode(try DocumentScanner.scan(imagePath: imagePath))
+            return try encode(try DocumentScanner.scan(imagePath: imagePath, minConfidence: allowUnstraightened ? 0.05 : 0))
         } catch ScanError.noDocumentFound where allowUnstraightened {
             return try encode(try DocumentScanner.load(imagePath: imagePath))
         }
