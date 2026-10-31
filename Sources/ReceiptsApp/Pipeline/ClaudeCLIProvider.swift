@@ -95,7 +95,9 @@ struct ClaudeCLIProvider: ReceiptExtractionProvider, ItemClassificationProvider,
         var args = [
             "-p",
             "--model", model,
-            "--output-format", "json",
+            // `--input-format stream-json` (image calls) is only accepted with stream-json output,
+            // which in turn needs `--verbose`; text-only calls keep the single JSON object.
+            "--output-format", imageInput ? "stream-json" : "json",
             "--json-schema", schema.anthropicCompatible().jsonString,
             "--max-turns", "3",
             "--tools", "",
@@ -106,7 +108,7 @@ struct ClaudeCLIProvider: ReceiptExtractionProvider, ItemClassificationProvider,
             "--permission-mode", "dontAsk",
             "--system-prompt", systemPrompt,
         ]
-        if imageInput { args += ["--input-format", "stream-json"] }
+        if imageInput { args += ["--input-format", "stream-json", "--verbose"] }
         return args
     }
 
@@ -165,15 +167,41 @@ struct ClaudeCLIProvider: ReceiptExtractionProvider, ItemClassificationProvider,
         return LLMResponse(text: try Self.parseResult(stdout: output.stdout, stderr: output.stderr, exitCode: output.exitCode), providerId: "\(id)/\(model)")
     }
 
-    /// `--output-format json` prints one result object. Prefer `structured_output`; fall back to
-    /// the `result` text (JSONUtil scrapes the object out of it downstream).
+    /// The final `result` message of the CLI output: `--output-format json` prints one object (or a
+    /// list of messages), `stream-json --verbose` prints NDJSON (system init, assistant, user,
+    /// rate_limit_event, ..., result). Lines that do not parse (a truncated tail, stray noise) are
+    /// skipped; the last `result` event wins; nil if there is none.
+    static func resultEnvelope(stdout: Data) -> [String: Any]? {
+        func lastResult(_ items: [Any]) -> [String: Any]? {
+            items.reversed().compactMap { $0 as? [String: Any] }.first { $0["type"] as? String == "result" }
+        }
+        if let whole = try? JSONSerialization.jsonObject(with: stdout) {
+            if let object = whole as? [String: Any] {
+                // A single object is the result itself (older `json` output has type "result" too).
+                return object["type"] == nil || object["type"] as? String == "result" ? object : nil
+            }
+            if let list = whole as? [Any] { return lastResult(list) }
+        }
+        let lines = stdout.split(separator: 0x0A).compactMap { try? JSONSerialization.jsonObject(with: Data($0)) }
+        return lastResult(lines)
+    }
+
+    /// Prefer `structured_output`; fall back to the `result` text (JSONUtil scrapes the object out of
+    /// it downstream). `is_error: true` is a failure whatever the `subtype` says (a bad model comes
+    /// back as `subtype: "success"`, `is_error: true`).
     static func parseResult(stdout: Data, stderr: Data, exitCode: Int32) throws -> String {
         let errText = String(data: stderr.suffix(2000), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let json = (try? JSONSerialization.jsonObject(with: stdout)) as? [String: Any]
+        let json = resultEnvelope(stdout: stdout)
         let resultText = json?["result"] as? String
 
         if exitCode != 0 || json?["is_error"] as? Bool == true {
-            let detail = [json?["subtype"] as? String, resultText, errText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " | ")
+            var parts: [String] = []
+            if let resultText { parts.append(resultText) }
+            if let errors = json?["errors"] as? [Any] { parts += errors.map { "\($0)" } }
+            if let status = json?["api_error_status"] as? Int { parts.append("HTTP \(status)") }
+            if parts.isEmpty, let subtype = json?["subtype"] as? String, subtype != "success" { parts.append(subtype) }
+            parts.append(errText)
+            let detail = parts.filter { !$0.isEmpty }.joined(separator: " | ")
             throw ClaudeCLIError.failed(exitCode: exitCode, detail: detail.isEmpty ? "no output" : String(detail.prefix(800)))
         }
         guard let json else {
