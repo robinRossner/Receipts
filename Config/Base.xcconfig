@@ -1,0 +1,2 @@
+// Shared build settings of the iPhone app. Do not put your team id here, see Local.xcconfig.
+#include? "Local.xcconfig"
