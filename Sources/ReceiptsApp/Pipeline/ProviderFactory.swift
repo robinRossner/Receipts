@@ -33,13 +33,12 @@ enum ProviderFactory {
             )
             return Backend(id: provider.id, extraction: provider, classification: provider, health: provider)
         case .anthropicAPI:
-            let provider = AnthropicAPIProvider(apiKey: KeychainStore.read(.anthropicAPIKey), model: settings.anthropicModel)
+            let provider = AnthropicAPIProvider(apiKey: KeychainStore.read(.anthropicAPIKey))
             return Backend(id: provider.id, extraction: provider, classification: provider, health: provider)
         case .claudeSubscriptionToken, .claudeCodeLogin:
             let provider = ClaudeCLIProvider(
                 authMode: backend == .claudeSubscriptionToken ? .oauthToken : .existingLogin,
                 binaryPath: ClaudeCLILocator.resolve(configured: settings.claudeCLIPath),
-                model: settings.claudeCLIModel,
                 oauthToken: backend == .claudeSubscriptionToken ? KeychainStore.read(.claudeOAuthToken) : nil
             )
             return Backend(id: provider.id, extraction: provider, classification: provider, health: provider)

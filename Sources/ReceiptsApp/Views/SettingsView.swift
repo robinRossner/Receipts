@@ -13,9 +13,7 @@ struct SettingsView: View {
     @AppStorage(LLMSettings.Keys.ollamaTextModel) private var ollamaTextModel = d.ollamaTextModel
     @AppStorage(LLMSettings.Keys.ollamaUseSchemaFormat) private var ollamaUseSchemaFormat = d.ollamaUseSchemaFormat
     @AppStorage(LLMSettings.Keys.debugDump) private var debugDump = d.debugDump
-    @AppStorage(LLMSettings.Keys.anthropicModel) private var anthropicModel = d.anthropicModel
     @AppStorage(LLMSettings.Keys.claudeCLIPath) private var claudeCLIPath = d.claudeCLIPath
-    @AppStorage(LLMSettings.Keys.claudeCLIModel) private var claudeCLIModel = d.claudeCLIModel
     @AppStorage(LLMSettings.Keys.fallbackToOllama) private var fallbackToOllama = d.fallbackToOllama
 
     @State private var isChecking = false
@@ -27,7 +25,7 @@ struct SettingsView: View {
     /// Everything that should trigger a provider rebuild, as one Equatable value.
     private var snapshot: [String] {
         [backend.rawValue, ollamaEndpoint, ollamaVisionModel, ollamaTextModel, "\(ollamaUseSchemaFormat)", "\(debugDump)",
-         anthropicModel, claudeCLIPath, claudeCLIModel, "\(fallbackToOllama)"]
+         claudeCLIPath, "\(fallbackToOllama)"]
     }
 
     var body: some View {
@@ -84,7 +82,7 @@ struct SettingsView: View {
         case .ollama:
             ollamaFields
         case .anthropicAPI:
-            TextField("Model", text: $anthropicModel, prompt: Text(Self.d.anthropicModel))
+            LabeledContent("Model", value: "\(ClaudeModel.id), \(ClaudeModel.effort) effort")
             secretRow(title: "API key", account: .anthropicAPIKey, isSaved: $hasAPIKey)
             Text("Billed to your Anthropic Console account. Create a key at platform.claude.com.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -123,7 +121,7 @@ struct SettingsView: View {
                 if let found = ClaudeCLILocator.detect() { claudeCLIPath = found }
             }
         }
-        TextField("Model", text: $claudeCLIModel, prompt: Text(Self.d.claudeCLIModel))
+        LabeledContent("Model", value: "\(ClaudeModel.id), \(ClaudeModel.effort) effort")
     }
 
     private func secretRow(title: String, account: KeychainStore.Account, isSaved: Binding<Bool>) -> some View {

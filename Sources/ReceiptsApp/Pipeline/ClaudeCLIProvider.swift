@@ -32,7 +32,16 @@ enum ClaudeCLILocator {
             "/opt/homebrew/bin/claude",
             "/usr/local/bin/claude",
             "\(home)/.npm-global/bin/claude",
-        ]
+            "\(home)/.volta/bin/claude",
+            "\(home)/.bun/bin/claude",
+        ] + nvmCandidates(home: home)
+    }
+
+    /// `npm i -g @anthropic-ai/claude-code` under nvm lands in ~/.nvm/versions/node/<version>/bin; newest version first.
+    static func nvmCandidates(home: String) -> [String] {
+        let root = "\(home)/.nvm/versions/node"
+        let versions = (try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []
+        return versions.sorted { $0.compare($1, options: .numeric) == .orderedDescending }.map { "\(root)/\($0)/bin/claude" }
     }
 
     static func detect() -> String? {
@@ -67,7 +76,16 @@ struct ClaudeCLIProvider: ReceiptExtractionProvider, ItemClassificationProvider,
     /// Resolved executable path, or nil if none was found.
     let binaryPath: String?
     let model: String
+    let effort: String
     let oauthToken: String?
+
+    init(authMode: AuthMode, binaryPath: String?, model: String = ClaudeModel.id, effort: String = ClaudeModel.effort, oauthToken: String?) {
+        self.authMode = authMode
+        self.binaryPath = binaryPath
+        self.model = model
+        self.effort = effort
+        self.oauthToken = oauthToken
+    }
 
     var id: String {
         switch authMode {
@@ -91,10 +109,11 @@ struct ClaudeCLIProvider: ReceiptExtractionProvider, ItemClassificationProvider,
     ///   keep the user's hooks, plugins, MCP servers and skills out of these calls.
     /// - `--max-turns 3`: `--json-schema` answers via an internal StructuredOutput tool call
     ///   and re-prompts on a schema mismatch, so one turn can be too few.
-    static func arguments(model: String, schema: JSONSchema, imageInput: Bool) -> [String] {
+    static func arguments(model: String = ClaudeModel.id, effort: String = ClaudeModel.effort, schema: JSONSchema, imageInput: Bool) -> [String] {
         var args = [
             "-p",
             "--model", model,
+            "--effort", effort,
             // `--input-format stream-json` (image calls) is only accepted with stream-json output,
             // which in turn needs `--verbose`; text-only calls keep the single JSON object.
             "--output-format", imageInput ? "stream-json" : "json",
@@ -146,7 +165,7 @@ struct ClaudeCLIProvider: ReceiptExtractionProvider, ItemClassificationProvider,
         let stdin = try jpeg.map { try Self.streamJSONMessage(jpeg: $0, prompt: prompt) } ?? Data(prompt.utf8)
         return Invocation(
             executable: binaryPath,
-            arguments: Self.arguments(model: model, schema: schema, imageInput: jpeg != nil),
+            arguments: Self.arguments(model: model, effort: effort, schema: schema, imageInput: jpeg != nil),
             environment: Self.environment(binaryPath: binaryPath, authMode: authMode, token: oauthToken),
             stdin: stdin
         )
@@ -164,7 +183,7 @@ struct ClaudeCLIProvider: ReceiptExtractionProvider, ItemClassificationProvider,
 
     private func run(_ invocation: Invocation) async throws -> LLMResponse {
         let output = try await ProcessRunner.run(invocation, timeoutSeconds: Self.timeoutSeconds)
-        return LLMResponse(text: try Self.parseResult(stdout: output.stdout, stderr: output.stderr, exitCode: output.exitCode), providerId: "\(id)/\(model)")
+        return LLMResponse(text: try Self.parseResult(stdout: output.stdout, stderr: output.stderr, exitCode: output.exitCode), providerId: "\(id)/\(model)/\(effort)")
     }
 
     /// The final `result` message of the CLI output: `--output-format json` prints one object (or a

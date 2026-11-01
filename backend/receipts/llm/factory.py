@@ -29,4 +29,5 @@ def provider_status(settings: ReceiptsSettings) -> dict[str, object]:
         "credential_configured": resolved != "none",
         "billing": {"api": "api", "claude_code": "subscription"}.get(resolved),
         "model": settings.receipts_llm_model,
+        "effort": settings.receipts_llm_effort,
     }

@@ -6,7 +6,8 @@ to one batched LLM classification call.
 Entries a user edited (`is_manual_override`) are never touched here beyond the usage counters and
 aliases; new names create new entries, so an extraction cannot overwrite a correction.
 
-An item the model says has no good category in the taxonomy becomes a flagged dictionary entry
+An item the model says has no good category in the taxonomy (or files under the fallback path
+Other > Miscellaneous > General although its name is readable) becomes a flagged dictionary entry
 (`category_flagged`, fallback category, `needs_review`, a proposed missing category): it is listed
 for a client to resolve later, and every receipt using the entry is fixed by that one resolution.
 """
@@ -49,6 +50,20 @@ def normalize_name(raw: str) -> str:
     s = _NON_WORD.sub(" ", s)
     s = _SPACES.sub(" ", s)
     return s.strip(" \t")
+
+
+_VOWELS = "aeiouyäöü"
+
+
+def is_readable_name(raw: str) -> bool:
+    """False for a cryptic / unreadable item name: no word of at least 3 letters with a vowel in it
+    ("Hnlt Ktfl", "XQ 7", "A1 K3"). Such a name may sit at the fallback path unflagged (the prompt
+    tells the model to do that); a readable name there is a missing category and gets flagged."""
+    for word in normalize_name(raw).split():
+        letters = word.strip("0123456789")
+        if len(letters) >= 3 and letters.isalpha() and any(c in _VOWELS for c in letters):
+            return True
+    return False
 
 
 def store_context(store_name: str | None) -> str:
@@ -260,6 +275,17 @@ def classify_with_llm(
                     "classified %r attempt=%d valid=%s", chunk[pos], attempt, path is not None
                 )
                 if path is not None:
+                    if (
+                        path.category,
+                        path.subcategory,
+                        path.item_group,
+                    ) == FALLBACK_PATH and is_readable_name(chunk[pos]):
+                        # The model filed a readable item under Miscellaneous without saying it
+                        # has no category: that is a missing category too, so it is flagged
+                        # (with whatever suggestion the model gave, none otherwise).
+                        resolved[pos] = _flagged(translation, answer, taxonomy)
+                        log.debug("classified %r attempt=%d fallback->flagged", chunk[pos], attempt)
+                        continue
                     resolved[pos] = Classification(
                         translation, path.category, path.subcategory, path.item_group, False
                     )

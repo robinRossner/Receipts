@@ -12,7 +12,7 @@ enum AnthropicAPIError: Error, LocalizedError {
         case .missingAPIKey: return "No Anthropic API key saved. Add one in Settings > AI backend."
         case .http(401, _): return "Anthropic rejected the API key (401). Check or replace it in Settings."
         case .http(403, let m): return "The API key isn't allowed to do this (403): \(m)"
-        case .http(404, let m): return "Model not found (404) - check the model name in Settings: \(m)"
+        case .http(404, let m): return "Model not found (404): \(m)"
         case .http(413, _): return "Request too large for the Anthropic API (413) - the receipt image is too big."
         case .http(429, _): return "Anthropic rate limit reached (429). Wait a moment and try again."
         case .http(529, _): return "Anthropic's API is overloaded right now (529). Try again shortly."
@@ -33,17 +33,25 @@ struct AnthropicAPIProvider: ReceiptExtractionProvider, ItemClassificationProvid
 
     let apiKey: String?
     let model: String
+    let effort: String
+
+    init(apiKey: String?, model: String = ClaudeModel.id, effort: String = ClaudeModel.effort) {
+        self.apiKey = apiKey
+        self.model = model
+        self.effort = effort
+    }
 
     var id: String { "anthropic-api" }
 
     // MARK: Request building (pure, so it can be checked without network access)
 
-    static func makeRequestBody(model: String, content: [[String: Any]], schema: JSONSchema, maxTokens: Int) -> [String: Any] {
+    static func makeRequestBody(model: String = ClaudeModel.id, effort: String = ClaudeModel.effort, content: [[String: Any]], schema: JSONSchema, maxTokens: Int) -> [String: Any] {
         [
             "model": model,
             "max_tokens": maxTokens,
             "messages": [["role": "user", "content": content]],
             "output_config": [
+                "effort": effort,
                 "format": ["type": "json_schema", "schema": schema.anthropicCompatible().root] as [String: Any],
             ] as [String: Any],
         ]
@@ -84,7 +92,7 @@ struct AnthropicAPIProvider: ReceiptExtractionProvider, ItemClassificationProvid
 
     private func send(content: [[String: Any]], schema: JSONSchema, maxTokens: Int) async throws -> LLMResponse {
         guard let apiKey, !apiKey.isEmpty else { throw AnthropicAPIError.missingAPIKey }
-        let body = Self.makeRequestBody(model: model, content: content, schema: schema, maxTokens: maxTokens)
+        let body = Self.makeRequestBody(model: model, effort: effort, content: content, schema: schema, maxTokens: maxTokens)
         let request = try Self.makeURLRequest(path: "messages", apiKey: apiKey, method: "POST", body: body, timeout: 180)
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
@@ -151,7 +159,7 @@ struct AnthropicAPIProvider: ReceiptExtractionProvider, ItemClassificationProvid
                     .compactMap { $0["id"] as? String } ?? []
                 status = ids.isEmpty || ids.contains(model) || ids.contains(where: { $0.hasPrefix(model) })
                     ? .ready
-                    : .warning("Model \"\(model)\" isn't available for this API key - check the model name in Settings.")
+                    : .warning("Model \"\(model)\" isn't available for this API key.")
             } else {
                 status = .warning(AnthropicAPIError.http(status: code, message: Self.errorMessage(from: data)).localizedDescription)
             }

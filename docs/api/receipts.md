@@ -527,7 +527,7 @@ the original upload is answered `200` without storing the photo again.
   "queue": {"queued": 0, "processing": 0, "done": 1, "failed": 0},
   "flagged_items": 0,
   "llm": {"provider": "none", "requested_provider": "auto", "credential_configured": false,
-          "billing": null, "model": "claude-haiku-5-5"}
+          "billing": null, "model": "claude-haiku-5-5", "effort": "high"}
 }
 ```
 

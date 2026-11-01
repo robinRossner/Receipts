@@ -94,6 +94,53 @@ final class FlaggedItemsTests: XCTestCase {
         XCTAssertNil(e.suggestedCategory); XCTAssertNil(e.suggestedParent)
     }
 
+    // MARK: - Readable items filed at Miscellaneous are flagged too
+
+    func testReadableItemFiledAtTheFallbackWithoutTheFlagIsFlagged() async throws {
+        for name in ["Vinzenz E Fleisch", "Müller's Berglinsen", "Hundefutter"] {
+            let db = try openTempDatabase(in: dir)
+            let llm = ScriptedClassifier([ScriptedClassifier.answer([(fallbackNumber(), false, "", "")])])
+            let e = try await resolve(db, [name], llm).first!
+            XCTAssertEqual(llm.calls, 1, "not retried: the model gave a valid number")
+            XCTAssertTrue(e.categoryFlagged, name)
+            XCTAssertTrue(e.needsReview)
+            XCTAssertEqual([e.category, e.subcategory, e.itemGroup], ["Other", "Miscellaneous", "General"])
+            XCTAssertNil(e.suggestedCategory, "no suggestion when the model gave none"); XCTAssertNil(e.suggestedParent)
+        }
+    }
+
+    func testFallbackAnswerKeepsTheSuggestionTheModelGave() async throws {
+        let db = try openTempDatabase(in: dir)
+        let llm = ScriptedClassifier([ScriptedClassifier.answer([(fallbackNumber(), false, "Pet Food", "Household")])])
+        let e = try await resolve(db, ["Pedigree Hundefutter"], llm).first!
+        XCTAssertTrue(e.categoryFlagged)
+        XCTAssertEqual(e.suggestedCategory, "Pet Food"); XCTAssertEqual(e.suggestedParent, "Household")
+    }
+
+    func testUnreadableNameStaysAtTheFallbackUnflagged() async throws {
+        for name in ["XQ 7", "Hnlt Ktfl", "A1 K3", "12", "K 5g"] {
+            let db = try openTempDatabase(in: dir)
+            let llm = ScriptedClassifier([ScriptedClassifier.answer([(fallbackNumber(), false, "", "")])])
+            let e = try await resolve(db, [name], llm).first!
+            XCTAssertFalse(e.categoryFlagged, name)
+            XCTAssertFalse(e.needsReview)
+            XCTAssertEqual([e.category, e.subcategory, e.itemGroup], ["Other", "Miscellaneous", "General"])
+        }
+    }
+
+    func testListedCategoryIsNeverFlaggedByTheFallbackRule() async throws {
+        let db = try openTempDatabase(in: dir)
+        let legumes = number(Taxonomy.Path("Food", "Pantry", "Legumes"))
+        let llm = ScriptedClassifier([ScriptedClassifier.answer([(legumes, false, "", "")])])
+        let e = try await resolve(db, ["Vinzenz E Fleisch"], llm).first!
+        XCTAssertFalse(e.categoryFlagged)
+    }
+
+    func testIsReadableName() {
+        for n in ["Milch 1l", "Bananen", "Spülmittel", "Ja! Haferdrink", "Vinzenz E Fleisch"] { XCTAssertTrue(ItemCategorizer.isReadableName(n), n) }
+        for n in ["Ab 12", "XQ 7", "Hnlt Ktfl", ""] { XCTAssertFalse(ItemCategorizer.isReadableName(n), n) }
+    }
+
     func testSuggestionThatNamesAnExistingPathIsFiledThereNotFlagged() async throws {
         let db = try openTempDatabase(in: dir)
         let llm = ScriptedClassifier([ScriptedClassifier.answer([(fallbackNumber(), true, "legumes", "food > pantry")])])
@@ -148,6 +195,8 @@ final class FlaggedItemsTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Flagging is rare"))
         XCTAssertTrue(prompt.contains("a merely imperfect fit is NOT a reason to flag"))
         XCTAssertTrue(prompt.contains("do NOT flag it"))
+        XCTAssertTrue(prompt.contains(#"Never choose "Other > Miscellaneous > General" for a product you can identify"#))
+        XCTAssertFalse(prompt.contains("If genuinely unsure, use the number"))
         let schema = ItemCategorizer.classificationSchema(itemCount: 2, pathNumbers: [1, 2])
         let entry = ((schema.root["properties"] as? [String: Any])?["items"] as? [String: Any])?["items"] as? [String: Any]
         XCTAssertEqual(entry?["required"] as? [String], ["index", "translation_en", "path_number", "no_good_match", "suggested_category", "suggested_parent"])

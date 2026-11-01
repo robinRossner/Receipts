@@ -14,9 +14,8 @@ Contract: `docs/api/receipts.md`; runbook: `deploy/README.md`.
   not `updated_at`, so an edit with an older clock than an extraction still wins and an extraction
   can never beat an edit. On top, a receipt whose content was edited through a push
   (`user_edited_at`) is never touched by an extraction again, retries included.
-- **Model.** `claude-haiku-5-5` (what the Mac app's Messages API provider uses; `RECEIPTS_LLM_MODEL`
-  changes it for both providers; the Mac's CLI alias `haiku` maps to the same model). Haiku 5.5 is
-  current, not retired.
+- **Model.** `claude-haiku-5-5` at effort `high` (see "Model choice" below). `RECEIPTS_LLM_MODEL` and
+  `RECEIPTS_LLM_EFFORT` change it for both providers; production leaves them unset.
 - **Providers.** `claude_code` (`claude -p` on the subscription, photo as a base64 image block in a
   stream-json user message, no tools, `ANTHROPIC_API_KEY` never in the subprocess environment) and
   `api` (official SDK, `output_config.format`, `stop_reason` checked first), `auto` prefers the
@@ -84,3 +83,24 @@ Contract: `docs/api/receipts.md`; runbook: `deploy/README.md`.
   "REWE Markt GmbH" -> Rewe, "Penny-Markt" -> Penny, "ALDI SÜD" / "ALDI SUED" -> Aldi Süd. Penny only as the first
   word and dm only as "dm" / "dm drogerie ..." (too short or too common elsewhere); a bare "Aldi" stays as printed.
   Stored receipts are not rewritten. Android keeps its exact-match table until it is ported.
+
+## Model choice and the flag gap (2026-11-01)
+
+- **Haiku 5.5 at high effort, hardcoded.** Picked from a 30-receipt comparison of models and effort levels:
+  29 of 30 receipts read exactly with `claude-haiku-5-5` at `high`; the one miss was the r30-style failure.
+  The Mac app hardcodes the pair in one place (`ClaudeModel` in `LLMSettings.swift`: `--model` / `--effort` for the
+  CLI backends, `model` / `output_config.effort` for the API; the free-text model fields in Settings are gone) and
+  the server defaults to it (`DEFAULT_MODEL`, `DEFAULT_EFFORT` in `backend/receipts/settings.py`; `/status` shows
+  both). The Mac's default backend is now the Claude connection (the `claude` CLI login), Ollama stays selectable.
+- **Alternative: Sonnet 5.5 at low effort,** the next best option, at about 16.7x the usage of Haiku high. To switch the
+  server, set `RECEIPTS_LLM_MODEL=claude-sonnet-5-5` and `RECEIPTS_LLM_EFFORT=low` in `backend/.env.production` and run
+  `deploy/push.sh user@your-server --with-env`; on the Mac change the two constants in `ClaudeModel` and rebuild.
+- **A readable item filed under Other > Miscellaneous > General is flagged.** In the test, `no_good_match` never fired
+  in 3,184 classifications, while 16 first-pass results were filed straight at the fallback with no flag (so they never
+  reached the flagged-items screen). Now an LLM answer that lands on the fallback path for a readable name is flagged
+  (with the model's suggestion if it gave one, none otherwise), in Swift (`ItemCategorizer.classifyWithLLM`) and on the
+  server (`classify_with_llm`) alike. "Readable" = a word of at least 3 letters with a vowel (`isReadableName` /
+  `is_readable_name`); cryptic names ("Hnlt Ktfl", "XQ 7") keep the unflagged fallback the prompt asks for. The prompt
+  now says: if nothing fits, set `no_good_match` and propose a category, never choose Miscellaneous for a product you can
+  identify. A real check at Haiku high (temp DB): common groceries (Milch, Bananen, Spülmittel) never flagged, "Vinzenz E
+  Fleisch" was flagged in 2 of 6 runs and otherwise filed under Meat & Fish.

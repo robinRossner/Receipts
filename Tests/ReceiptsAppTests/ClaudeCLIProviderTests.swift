@@ -35,6 +35,57 @@ final class ClaudeCLIProviderTests: XCTestCase {
         XCTAssertTrue(args.contains("--verbose"))
     }
 
+    func testModelAndEffortAreHardcodedToHaikuHigh() {
+        XCTAssertEqual(ClaudeModel.id, "claude-haiku-5-5")
+        XCTAssertEqual(ClaudeModel.effort, "high")
+        let schema = JSONSchema(name: "x", root: ["type": "object"])
+        for image in [true, false] {
+            let args = ClaudeCLIProvider.arguments(schema: schema, imageInput: image)
+            XCTAssertEqual(args[args.firstIndex(of: "--model")! + 1], "claude-haiku-5-5")
+            XCTAssertEqual(args[args.firstIndex(of: "--effort")! + 1], "high")
+        }
+        let provider = ClaudeCLIProvider(authMode: .existingLogin, binaryPath: "/bin/claude", oauthToken: nil)
+        let invocation = try? provider.makeInvocation(prompt: "p", jpeg: nil, schema: schema)
+        let args = invocation?.arguments ?? []
+        XCTAssertEqual(args[(args.firstIndex(of: "--model") ?? 0) + 1], "claude-haiku-5-5")
+        XCTAssertEqual(args[(args.firstIndex(of: "--effort") ?? 0) + 1], "high")
+    }
+
+    func testAPIRequestCarriesModelAndEffort() throws {
+        let schema = JSONSchema(name: "x", root: ["type": "object"])
+        let body = AnthropicAPIProvider.makeRequestBody(content: AnthropicAPIProvider.textContent("p"), schema: schema, maxTokens: 100)
+        XCTAssertEqual(body["model"] as? String, "claude-haiku-5-5")
+        let config = try XCTUnwrap(body["output_config"] as? [String: Any])
+        XCTAssertEqual(config["effort"] as? String, "high")
+        XCTAssertNotNil(config["format"])
+        let sonnet = AnthropicAPIProvider.makeRequestBody(model: "claude-sonnet-5-5", effort: "low", content: [], schema: schema, maxTokens: 1)
+        XCTAssertEqual(sonnet["model"] as? String, "claude-sonnet-5-5")
+        XCTAssertEqual((sonnet["output_config"] as? [String: Any])?["effort"] as? String, "low")
+    }
+
+    func testClaudeConnectionIsTheDefaultBackendAndOllamaStaysSelectable() throws {
+        XCTAssertEqual(LLMSettings.defaults.backend, .claudeCodeLogin)
+        XCTAssertTrue(LLMSettings.defaults.backend.isClaude)
+        XCTAssertTrue(LLMBackend.allCases.contains(.ollama))
+        let suite = "receipts-tests-\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { store.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(LLMSettings.load(from: store).backend, .claudeCodeLogin, "nothing stored: Claude")
+        store.set("ollama", forKey: LLMSettings.Keys.backend)
+        XCTAssertEqual(LLMSettings.load(from: store).backend, .ollama, "an explicit choice is kept")
+    }
+
+    func testCLILocatorFindsNvmInstallsNewestFirst() throws {
+        let home = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: home) }
+        for v in ["v9.0.0", "v24.14.0", "v20.11.1"] {
+            try FileManager.default.createDirectory(at: home.appendingPathComponent(".nvm/versions/node/\(v)/bin"), withIntermediateDirectories: true)
+        }
+        let found = ClaudeCLILocator.nvmCandidates(home: home.path).map { ($0 as NSString).deletingLastPathComponent.components(separatedBy: "/").dropLast().last! }
+        XCTAssertEqual(found, ["v24.14.0", "v20.11.1", "v9.0.0"])
+        XCTAssertEqual(ClaudeCLILocator.nvmCandidates(home: "/nonexistent"), [])
+    }
+
     func testTextCallsKeepJSONOutput() {
         let args = ClaudeCLIProvider.arguments(model: "m", schema: .init(name: "x", root: ["type": "object"]), imageInput: false)
         XCTAssertEqual(args[args.firstIndex(of: "--output-format")! + 1], "json")

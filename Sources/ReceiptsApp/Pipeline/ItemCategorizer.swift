@@ -37,6 +37,18 @@ enum ItemCategorizer {
         ("kaufland", "a German supermarket (mostly food and beverages)"),
     ]
 
+    /// False for a cryptic / unreadable item name: no word of at least 3 letters with a vowel in it ("Hnlt Ktfl", "XQ 7",
+    /// "A1 K3"). Such a name may sit at the fallback path unflagged (the prompt tells the model to do that); a readable
+    /// name there is a missing category and gets flagged. Port of `is_readable_name` in backend extraction/categorize.py.
+    static func isReadableName(_ raw: String) -> Bool {
+        let vowels = Set("aeiouyäöü")
+        for word in normalizeName(raw).split(separator: " ") {
+            let letters = word.trimmingCharacters(in: .decimalDigits)
+            if letters.count >= 3, letters.allSatisfy(\.isLetter), letters.contains(where: { vowels.contains($0) }) { return true }
+        }
+        return false
+    }
+
     static func storeContext(_ storeName: String?) -> String {
         guard let storeName, !storeName.isEmpty else {
             return "The store these items were purchased from is unknown."
@@ -89,9 +101,9 @@ enum ItemCategorizer {
     - Classify each item on its own; being on the same receipt says nothing about its category.
     - Oats (Haferflocken) and muesli are Pantry > Cereals & Muesli, never vegetables.
     - Baking paper (Backpapier) is a household foil/paper item, not kitchen roll.
-    - If genuinely unsure, use the number for "Other > Miscellaneous > General".
+    - If genuinely unsure between listed categories, pick the closest one.
     - If you cannot tell what the item is (cryptic or unreadable name), use the number for "Other > Miscellaneous > General" and do NOT flag it.
-    - Missing category: set "no_good_match" to true ONLY when you know exactly what the product is and NONE of the listed categories is a reasonable home for it (for example pet food, when the list has no pet category). Flagging is rare: the large majority of items, and every common grocery, drugstore or household item, fits a listed category, even if the fit is not perfect. A brand name, an abbreviation, unusual wording or a merely imperfect fit is NOT a reason to flag - choose the closest category instead. When you flag, give the number of "Other > Miscellaneous > General" as path_number and propose the missing category: "suggested_category" is its short name (at most 4 words, English, e.g. "Pet Food") and "suggested_parent" says where it would belong: an existing top-level category (e.g. "Household") or "Category > Subcategory" using existing names (e.g. "Household > Household Goods"); a new subcategory name is allowed. When you do not flag, set "no_good_match" to false and both suggestion fields to "".
+    - Missing category: set "no_good_match" to true ONLY when you know exactly what the product is and NONE of the listed categories is a reasonable home for it (for example pet food, when the list has no pet category). Never choose "Other > Miscellaneous > General" for a product you can identify: if nothing fits, set "no_good_match" to true and propose the missing category instead. Flagging is rare: the large majority of items, and every common grocery, drugstore or household item, fits a listed category, even if the fit is not perfect. A brand name, an abbreviation, unusual wording or a merely imperfect fit is NOT a reason to flag - choose the closest category instead. When you flag, give the number of "Other > Miscellaneous > General" as path_number and propose the missing category: "suggested_category" is its short name (at most 4 words, English, e.g. "Pet Food") and "suggested_parent" says where it would belong: an existing top-level category (e.g. "Household") or "Category > Subcategory" using existing names (e.g. "Household > Household Goods"); a new subcategory name is allowed. When you do not flag, set "no_good_match" to false and both suggestion fields to "".
 
     Respond with ONLY this JSON, no explanation, no markdown fences - exactly one entry per item, using the item's index from the square brackets:
     {
@@ -304,6 +316,10 @@ enum ItemCategorizer {
                         flagged: answer?.noGoodMatch == true
                     )
                     if let answer, answer.noGoodMatch {
+                        resolved[pos] = flaggedClassification(translation: answer.translationEn ?? chunk[pos], answer: answer, taxonomy: taxonomy)
+                    } else if let path, let answer, Taxonomy.Path(path.category, path.subcategory, path.itemGroup) == Taxonomy.fallback, isReadableName(chunk[pos]) {
+                        // Filed under Miscellaneous without a no-good-match flag although the name is readable: a missing
+                        // category too, so it is flagged (with the model's suggestion if it gave one, none otherwise).
                         resolved[pos] = flaggedClassification(translation: answer.translationEn ?? chunk[pos], answer: answer, taxonomy: taxonomy)
                     } else if let path {
                         resolved[pos] = Classification(

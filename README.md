@@ -31,7 +31,12 @@ classification_log.jsonl).
 
 ## Requirements
 
-- [Ollama](https://ollama.com) running locally with:
+By default the Mac app reads receipts through the **Claude connection**: the `claude` CLI you are already logged in
+with (Claude Code), with the model hardcoded to `claude-haiku-5-5` at high effort (`ClaudeModel` in
+`Sources/ReceiptsApp/Pipeline/LLMSettings.swift`; why: `docs/decisions.md`). Settings > AI Backend can switch to the Claude
+API, a subscription token, or local Ollama. With Cloud sync on, the server does the reading and uses the same model.
+
+- Only for the Ollama backend (or as the fallback when Claude fails): [Ollama](https://ollama.com) running locally with:
   - `qwen2.5vl:7b` (receipt photo -> structured data)
   - `qwen2.5:7b-instruct` (item categorization + translation)
 

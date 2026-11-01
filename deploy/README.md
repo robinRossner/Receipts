@@ -153,7 +153,7 @@ the laptop holds it, and `archive-confirm` for it is then a no-op.
 All keys are optional except the token (`backend/.env` for development, `backend/.env.production`
 on the server, see `backend/.env.example`): `RECEIPTS_API_TOKEN`, `RECEIPTS_LLM_PROVIDER`
 (`auto|claude_code|api`; `auto` prefers `CLAUDE_CODE_OAUTH_TOKEN`, then `ANTHROPIC_API_KEY`),
-`RECEIPTS_LLM_MODEL` (default `claude-haiku-5-5`), `RECEIPTS_MAX_PHOTO_BYTES` (15 MB; Caddy has no
+`RECEIPTS_LLM_MODEL` (default `claude-haiku-5-5`) and `RECEIPTS_LLM_EFFORT` (default `high`; leave both unset in production), `RECEIPTS_MAX_PHOTO_BYTES` (15 MB; Caddy has no
 body limit of its own), `RECEIPTS_ARCHIVE_REMINDER_DAYS` (30), `RECEIPTS_DISK_WARNING_FREE_MB`
 (2048), `RECEIPTS_NOTIFY_URL`, `AUTH_MAX_FAILURES` / `AUTH_FAILURE_WINDOW_S` (429 after 20 wrong
 tokens per client IP in 10 minutes), `TRUSTED_PROXY_IPS` (default: private ranges, i.e. the Caddy

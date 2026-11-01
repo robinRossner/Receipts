@@ -14,10 +14,12 @@ from core.settings import BACKEND_DIR, CoreSettings
 
 RECEIPTS_DIR = Path(__file__).resolve().parent  # backend/receipts: alembic, data
 
-# Default model: the one the Mac app's providers use (LLMSettings.swift: `claude-haiku-5-5` for the
-# Messages API, the alias `haiku` for the CLI). Haiku 5.5 is current (not retired); one id for both
-# providers so it is a single value to change: RECEIPTS_LLM_MODEL.
+# Default model and thinking depth: Haiku 5.5 at high effort, the same pair the Mac app hardcodes
+# (`ClaudeModel` in LLMSettings.swift), picked from a 30-receipt comparison (docs/decisions.md).
+# One id for both providers. Production leaves the env unset, so switching to another model is a
+# one-line change: RECEIPTS_LLM_MODEL (and RECEIPTS_LLM_EFFORT).
 DEFAULT_MODEL = "claude-haiku-5-5"
+DEFAULT_EFFORT = "high"
 
 
 class ReceiptsSettings(CoreSettings):
@@ -32,7 +34,7 @@ class ReceiptsSettings(CoreSettings):
     # that token is set, else api if a key is set, else the queue waits (jobs stay queued).
     receipts_llm_provider: Literal["claude_code", "api", "auto"] = "auto"
     receipts_llm_model: str = DEFAULT_MODEL
-    receipts_llm_effort: str = "medium"  # output_config.effort / `claude --effort`
+    receipts_llm_effort: str = DEFAULT_EFFORT  # output_config.effort / `claude --effort`
     receipts_cli_path: str = "claude"
     receipts_cli_timeout_s: float = 240.0
     receipts_api_timeout_s: float = 240.0

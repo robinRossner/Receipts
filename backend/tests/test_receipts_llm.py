@@ -63,6 +63,7 @@ def test_factory_and_status_never_expose_credentials(monkeypatch):
         "credential_configured": True,
         "billing": "subscription",
         "model": "claude-haiku-5-5",
+        "effort": "high",
     }
     assert SECRET_KEY not in str(status) and SECRET_TOKEN not in str(status)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
@@ -70,7 +71,15 @@ def test_factory_and_status_never_expose_credentials(monkeypatch):
     assert build_provider(settings(monkeypatch)) is None
 
 
-def test_default_model_is_the_one_the_mac_app_uses_and_is_configurable(monkeypatch):
+def test_default_is_haiku_at_high_effort_and_configurable(monkeypatch):
+    s = settings(monkeypatch)
+    assert (s.receipts_llm_model, s.receipts_llm_effort) == ("claude-haiku-5-5", "high")
+    sonnet = settings(
+        monkeypatch, RECEIPTS_LLM_MODEL="claude-sonnet-5-5", RECEIPTS_LLM_EFFORT="low"
+    )
+    assert (sonnet.receipts_llm_model, sonnet.receipts_llm_effort) == ("claude-sonnet-5-5", "low")
+    monkeypatch.delenv("RECEIPTS_LLM_MODEL")
+    monkeypatch.delenv("RECEIPTS_LLM_EFFORT")
     assert settings(monkeypatch).receipts_llm_model == "claude-haiku-5-5"
     assert settings(monkeypatch, RECEIPTS_LLM_MODEL="claude-opus-5-5").receipts_llm_model == (
         "claude-opus-5-5"
@@ -125,7 +134,7 @@ def test_api_request_follows_the_current_rules(monkeypatch):
     assert txt == {"type": "text", "text": "PROMPT"}
     fmt = kw["output_config"]["format"]
     assert fmt["type"] == "json_schema" and fmt["schema"]["additionalProperties"] is False
-    assert kw["output_config"]["effort"] == "medium"
+    assert kw["output_config"]["effort"] == "high"
 
 
 def test_png_media_type_is_passed_through(monkeypatch):
@@ -249,6 +258,7 @@ def test_cli_command_line(monkeypatch):
 
     assert argv[:2] == ["/bin/claude", "-p"]
     assert after("--model") == "claude-haiku-5-5"
+    assert after("--effort") == "high"
     # --input-format stream-json is only accepted with stream-json output, which needs --verbose
     assert after("--output-format") == "stream-json" and "--verbose" in argv
     assert after("--tools") == ""  # no tools: the image goes in through the prompt, not a file

@@ -14,6 +14,7 @@ from receipts import worker
 from receipts.db.models import ItemDictionary, LineItem, TaxonomyAddition
 from receipts.extraction.categorize import (
     classify_with_llm,
+    is_readable_name,
     sanitize_suggestion,
 )
 from receipts.extraction.prompts import CLASSIFY_PROMPT_TEMPLATE, classification_schema
@@ -62,15 +63,15 @@ def test_prompt_has_the_flagging_rules_and_json_shape():
         "that field, just give its number." in t
     )
     rules = t.split("Rules:\n")[1].split("\n\nRespond")[0].splitlines()
-    assert (
-        rules[-3:][0]
-        == '- If genuinely unsure, use the number for "Other > Miscellaneous > General".'
-    )
+    assert rules[-3:][0] == "- If genuinely unsure between listed categories, pick the closest one."
     assert rules[-2] == (
         "- If you cannot tell what the item is (cryptic or unreadable name), use the number for "
         '"Other > Miscellaneous > General" and do NOT flag it.'
     )
     assert rules[-1].startswith('- Missing category: set "no_good_match" to true ONLY when')
+    assert (
+        'Never choose "Other > Miscellaneous > General" for a product you can identify' in rules[-1]
+    )
     assert rules[-1].endswith(
         'When you do not flag, set "no_good_match" to false and both suggestion fields to "".'
     )
@@ -156,6 +157,54 @@ def test_old_and_flat_answer_shapes_still_work():
     provider = Raw({"translation_en": "milk", "path_number": MILK})  # single item, flat shape
     (flat,), _ = classify_with_llm(["Milch"], get_taxonomy(), None, provider)
     assert flat.item_group == "Milk" and flat.category_flagged is False
+
+
+@pytest.mark.parametrize("name", ["Vinzenz E Fleisch", "Müller's Berglinsen", "Hundefutter"])
+def test_a_readable_item_filed_at_the_fallback_is_flagged_without_a_suggestion(name):
+    # the model says "Other > Miscellaneous > General" and no_good_match false: a missing category
+    r, provider = one(
+        answer(no_good_match=False, suggested_category="", suggested_parent=""), name=name
+    )
+    assert (r.category, r.subcategory, r.item_group) == FALLBACK_PATH
+    assert r.category_flagged is True and r.needs_review is True
+    assert (r.suggested_category, r.suggested_parent) == (None, None)
+    assert r.translation_en == "en 1" and len(provider.prompts) == 1  # not retried
+
+
+def test_a_fallback_answer_keeps_the_suggestion_the_model_gave():
+    r, _ = one(answer(suggested_category="Pet Food", suggested_parent="Household"))
+    assert r.category_flagged is True
+    assert (r.suggested_category, r.suggested_parent) == ("Pet Food", "Household")
+
+
+@pytest.mark.parametrize("name", ["XQ 7", "Hnlt Ktfl", "A1 K3", "12", "K 5g"])
+def test_an_unreadable_name_stays_at_the_fallback_unflagged(name):
+    r, _ = one(answer(), name=name)
+    assert (r.category, r.subcategory, r.item_group) == FALLBACK_PATH
+    assert r.category_flagged is False and r.needs_review is False
+
+
+def test_a_listed_category_is_never_flagged_by_the_fallback_rule():
+    r, _ = one(answer(number=MILK), name="Vinzenz E Fleisch")
+    assert r.category_flagged is False and r.item_group == "Milk"
+
+
+@pytest.mark.parametrize(
+    ("name", "readable"),
+    [
+        ("Milch 1l", True),
+        ("Bananen", True),
+        ("Spülmittel", True),
+        ("Ja! Haferdrink", True),
+        ("Vinzenz E Fleisch", True),
+        ("Ab 12", False),
+        ("XQ 7", False),
+        ("Hnlt Ktfl", False),
+        ("", False),
+    ],
+)
+def test_is_readable_name(name, readable):
+    assert is_readable_name(name) is readable
 
 
 def test_unflagged_invalid_numbers_still_get_the_second_attempt():
