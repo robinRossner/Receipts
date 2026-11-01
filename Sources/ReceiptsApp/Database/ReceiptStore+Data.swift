@@ -100,7 +100,8 @@ extension ReceiptStore {
         do {
             try await db.run("""
                 UPDATE item_dictionary SET display_name_de = ?, translation_en = ?, category = ?, subcategory = ?, item_group = ?,
-                    is_manual_override = 1, needs_review = 0 WHERE id = ?
+                    is_manual_override = 1, needs_review = 0,
+                    category_flagged = 0, suggested_category = NULL, suggested_parent = NULL WHERE id = ?
                 """, [.text(row.displayNameDe), .from(row.translationEn.isEmpty ? nil : row.translationEn),
                       .text(row.category), .text(row.subcategory), .text(row.itemGroup), .from(row.id)])
         } catch { report("Saving dictionary entry", error) }
@@ -134,6 +135,7 @@ extension ReceiptStore {
 
     private func afterDictionaryChange() async {
         invalidateStatsCache()
+        await refreshFlaggedCount()
         if let id = selectedReceiptID { await loadReceiptDetail(id: id) }
     }
 }

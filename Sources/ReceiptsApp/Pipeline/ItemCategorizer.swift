@@ -90,6 +90,8 @@ enum ItemCategorizer {
     - Oats (Haferflocken) and muesli are Pantry > Cereals & Muesli, never vegetables.
     - Baking paper (Backpapier) is a household foil/paper item, not kitchen roll.
     - If genuinely unsure, use the number for "Other > Miscellaneous > General".
+    - If you cannot tell what the item is (cryptic or unreadable name), use the number for "Other > Miscellaneous > General" and do NOT flag it.
+    - Missing category: set "no_good_match" to true ONLY when you know exactly what the product is and NONE of the listed categories is a reasonable home for it (for example pet food, when the list has no pet category). Flagging is rare: the large majority of items, and every common grocery, drugstore or household item, fits a listed category, even if the fit is not perfect. A brand name, an abbreviation, unusual wording or a merely imperfect fit is NOT a reason to flag - choose the closest category instead. When you flag, give the number of "Other > Miscellaneous > General" as path_number and propose the missing category: "suggested_category" is its short name (at most 4 words, English, e.g. "Pet Food") and "suggested_parent" says where it would belong: an existing top-level category (e.g. "Household") or "Category > Subcategory" using existing names (e.g. "Household > Household Goods"); a new subcategory name is allowed. When you do not flag, set "no_good_match" to false and both suggestion fields to "".
 
     Respond with ONLY this JSON, no explanation, no markdown fences - exactly one entry per item, using the item's index from the square brackets:
     {
@@ -97,7 +99,10 @@ enum ItemCategorizer {
         {
           "index": <the item's index>,
           "translation_en": "<natural English translation of what the product actually is>",
-          "path_number": <the single number from the category list above, as an integer>
+          "path_number": <the single number from the category list above, as an integer>,
+          "no_good_match": <true only if no listed category is a reasonable home for the item, otherwise false>,
+          "suggested_category": "<short name of the missing category if no_good_match is true, otherwise empty string>",
+          "suggested_parent": "<Category or Category > Subcategory it would belong under if no_good_match is true, otherwise empty string>"
         }
       ]
     }
@@ -116,8 +121,11 @@ enum ItemCategorizer {
                 "index": ["type": "integer", "enum": Array(1...max(itemCount, 1)), "description": "The item's index from the item list"],
                 "translation_en": ["type": "string", "description": "Natural English translation of what the product actually is"],
                 "path_number": ["type": "integer", "enum": pathNumbers, "description": "Number of the chosen category from the category list"],
+                "no_good_match": ["type": "boolean", "description": "True only if no listed category is a reasonable home for the item"],
+                "suggested_category": ["type": "string", "description": "Short name of the missing category when no_good_match is true, else empty"],
+                "suggested_parent": ["type": "string", "description": "Category or 'Category > Subcategory' it would go under when no_good_match is true, else empty"],
             ] as [String: Any],
-            "required": ["index", "translation_en", "path_number"],
+            "required": ["index", "translation_en", "path_number", "no_good_match", "suggested_category", "suggested_parent"],
             "additionalProperties": false,
         ]
         let root: [String: Any] = [
@@ -131,7 +139,70 @@ enum ItemCategorizer {
 
     // ---- LLM classification, ported from call_llm() / classify_with_llm(), batched per receipt ----
 
-    private typealias Answer = (translationEn: String?, pathNumber: Int?)
+    struct Answer {
+        var translationEn: String?
+        var pathNumber: Int?
+        var noGoodMatch = false
+        var suggestedCategory: String?
+        var suggestedParent: String?
+    }
+
+    /// true / "true" / 1 are true; anything else (missing, false, "no") is not.
+    static func coerceBool(_ any: Any?) -> Bool {
+        switch any {
+        case let n as NSNumber: return n.doubleValue == 1
+        case let s as String: return ["true", "1"].contains(s.trimmingCharacters(in: .whitespaces).lowercased())
+        default: return false
+        }
+    }
+
+    // ---- "No good category": suggestion cleaning (the server's sanitize_suggestion is its port) ----
+
+    static let maxSuggestionPart = 60
+
+    private static func clean(_ any: String?) -> String {
+        guard let any else { return "" }
+        let collapsed = replace(any, pattern: #"\s+"#, with: " ").trimmingCharacters(in: .whitespaces)
+        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`\u{201C}\u{201D}\u{201E}\u{2018}\u{2019}\u{00AB}\u{00BB}"))
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Cleans what the model proposed for a missing category. `category` is a short leaf name (no ">", at most 60
+    /// characters), `parent` is "Category" or "Category > Sub" with existing names spelled as in the taxonomy. `existing`
+    /// is set when the suggestion names a path the taxonomy already has: the item is then filed there, not flagged.
+    static func sanitizeSuggestion(category: String?, parent: String?, taxonomy: Taxonomy)
+        -> (category: String?, parent: String?, existing: Taxonomy.Path?) {
+        let leafRaw = clean(category)
+        let leaf: String? = (leafRaw.isEmpty || leafRaw.contains(">")) ? nil
+            : String(leafRaw.prefix(maxSuggestionPart)).trimmingCharacters(in: .whitespaces)
+        var parts = (parent?.components(separatedBy: ">") ?? []).map { clean($0) }
+        guard parts.count == 1 || parts.count == 2, !parts.contains(where: { $0.isEmpty || $0.count > maxSuggestionPart }) else {
+            return (leaf, nil, nil)
+        }
+        if let cat = taxonomy.canonicalCategory(parts[0]) {
+            parts[0] = cat
+            if parts.count == 2, let sub = taxonomy.canonicalSubcategory(parts[1], in: cat) { parts[1] = sub }
+        }
+        var existing: Taxonomy.Path?
+        if let leaf, !leaf.isEmpty {
+            let wanted = parts.count == 2 ? Taxonomy.Path(parts[0], parts[1], leaf) : Taxonomy.Path(parts[0], leaf, "General")
+            existing = taxonomy.canonicalPath(matching: wanted)
+        }
+        return (leaf?.isEmpty == true ? nil : leaf, parts.joined(separator: " > "), existing)
+    }
+
+    /// The model found no fitting category: fallback path, flagged, with the cleaned suggestion. A suggestion that names an
+    /// existing path is not a missing category: the item simply goes there.
+    static func flaggedClassification(translation: String, answer: Answer, taxonomy: Taxonomy) -> Classification {
+        let s = sanitizeSuggestion(category: answer.suggestedCategory, parent: answer.suggestedParent, taxonomy: taxonomy)
+        if let e = s.existing {
+            return Classification(translationEn: translation, category: e.category, subcategory: e.subcategory, itemGroup: e.itemGroup, needsReview: false)
+        }
+        return Classification(
+            translationEn: translation, category: Taxonomy.fallback.category, subcategory: Taxonomy.fallback.subcategory,
+            itemGroup: Taxonomy.fallback.itemGroup, needsReview: true, categoryFlagged: true,
+            suggestedCategory: s.category, suggestedParent: s.parent)
+    }
 
     /// One call for `itemNames` (indexed 1...n in the prompt). Returns answers keyed by that index;
     /// items the model skipped are simply absent.
@@ -161,11 +232,14 @@ enum ItemCategorizer {
         if let entries = obj["items"] as? [[String: Any]] {
             for entry in entries {
                 guard let index = JSONCoerce.int(entry["index"]), (1...itemNames.count).contains(index), answers[index] == nil else { continue }
-                answers[index] = (JSONCoerce.string(entry["translation_en"]), JSONCoerce.int(entry["path_number"]))
+                answers[index] = Answer(
+                    translationEn: JSONCoerce.string(entry["translation_en"]), pathNumber: JSONCoerce.int(entry["path_number"]),
+                    noGoodMatch: coerceBool(entry["no_good_match"]), suggestedCategory: JSONCoerce.string(entry["suggested_category"]),
+                    suggestedParent: JSONCoerce.string(entry["suggested_parent"]))
             }
         } else if itemNames.count == 1, obj["path_number"] != nil {
             // Single item answered in the old flat shape - accept it.
-            answers[1] = (JSONCoerce.string(obj["translation_en"]), JSONCoerce.int(obj["path_number"]))
+            answers[1] = Answer(translationEn: JSONCoerce.string(obj["translation_en"]), pathNumber: JSONCoerce.int(obj["path_number"]))
         }
         return (answers, response.providerId)
     }
@@ -176,11 +250,16 @@ enum ItemCategorizer {
         var subcategory: String
         var itemGroup: String
         var needsReview: Bool
+        /// No good category in the taxonomy (see `flaggedClassification`): filed under the fallback path until resolved.
+        var categoryFlagged = false
+        var suggestedCategory: String?
+        var suggestedParent: String?
     }
 
     /// Classifies all `itemNames` with one LLM call per chunk; items whose answer is missing or
     /// not a valid taxonomy number get one batched retry, then fall back to
-    /// Other > Miscellaneous > General with needs_review. Results are in input order;
+    /// Other > Miscellaneous > General with needs_review. Items the model flags as having no good category are never
+    /// retried (`flaggedClassification`). Results are in input order;
     /// `providerIds` lists who answered (several only when a FallbackProvider switched).
     static func classifyWithLLM(
         itemNames: [String], taxonomy: Taxonomy, storeName: String?, logURL: URL, provider: any ItemClassificationProvider
@@ -221,9 +300,12 @@ enum ItemCategorizer {
                     let path = answer?.pathNumber.flatMap { indexMap[$0] }
                     logClassification(
                         itemName: chunk[pos], store: storeName, attempt: attempt, translation: answer?.translationEn,
-                        pathNumber: answer?.pathNumber, valid: path != nil, provider: providerId, logURL: logURL
+                        pathNumber: answer?.pathNumber, valid: path != nil || answer?.noGoodMatch == true, provider: providerId, logURL: logURL,
+                        flagged: answer?.noGoodMatch == true
                     )
-                    if let path {
+                    if let answer, answer.noGoodMatch {
+                        resolved[pos] = flaggedClassification(translation: answer.translationEn ?? chunk[pos], answer: answer, taxonomy: taxonomy)
+                    } else if let path {
                         resolved[pos] = Classification(
                             translationEn: answer?.translationEn ?? chunk[pos], category: path.category,
                             subcategory: path.subcategory, itemGroup: path.itemGroup, needsReview: false
@@ -245,11 +327,12 @@ enum ItemCategorizer {
         return (results, providerIds)
     }
 
-    private static func logClassification(itemName: String, store: String?, attempt: Int, translation: String?, pathNumber: Int?, valid: Bool, provider: String, logURL: URL, path: String? = nil) {
+    private static func logClassification(itemName: String, store: String?, attempt: Int, translation: String?, pathNumber: Int?, valid: Bool, provider: String, logURL: URL, path: String? = nil, flagged: Bool = false) {
         var result: [String: Any] = [:]
         if let translation { result["translation_en"] = translation }
         if let pathNumber { result["path_number"] = pathNumber }
         if let path { result["path"] = path }
+        if flagged { result["no_good_match"] = true }
         var entry: [String: Any] = [
             "timestamp": isoNow(),
             "item_name": itemName,
@@ -293,9 +376,18 @@ enum ItemCategorizer {
             needsReview: row.bool(9),
             timesSeen: row.int(10) ?? 0,
             createdAt: row.string(11) ?? "",
-            lastSeenAt: row.string(12) ?? ""
+            lastSeenAt: row.string(12) ?? "",
+            categoryFlagged: row.bool(13),
+            suggestedCategory: row.string(14),
+            suggestedParent: row.string(15)
         )
     }
+
+    /// Column order `rowToEntry` reads (an explicit list: `SELECT *` would shift when columns are added).
+    private static let entryColumns = """
+        id, canonical_name, display_name_de, translation_en, category, subcategory, item_group, aliases, is_manual_override,
+        needs_review, times_seen, created_at, last_seen_at, category_flagged, suggested_category, suggested_parent
+        """
 
     private static func touchEntry(db: Database, rowId: Int, alias: String?) async throws {
         if let alias {
@@ -336,7 +428,7 @@ enum ItemCategorizer {
         guard !dictionaryIds.isEmpty else { return 0 }
         let marks = dictionaryIds.map { _ in "?" }.joined(separator: ",")
         let rows = try await db.query(
-            "SELECT * FROM item_dictionary WHERE is_manual_override = 0 AND id IN (\(marks))",
+            "SELECT \(entryColumns) FROM item_dictionary WHERE is_manual_override = 0 AND id IN (\(marks))",
             dictionaryIds.map { .from($0) }
         )
         let entries = rows.map(rowToEntry)
@@ -363,10 +455,12 @@ enum ItemCategorizer {
                 """
                 UPDATE item_dictionary
                 SET category = ?, subcategory = ?, item_group = ?, needs_review = ?,
+                    category_flagged = ?, suggested_category = ?, suggested_parent = ?,
                     translation_en = COALESCE(?, translation_en)
                 WHERE id = ? AND is_manual_override = 0
                 """,
                 [.text(c.category), .text(c.subcategory), .text(c.itemGroup), .from(c.needsReview),
+                 .from(c.categoryFlagged), .from(c.suggestedCategory), .from(c.suggestedParent),
                  c.translationEn.isEmpty ? .null : .text(c.translationEn), .from(entry.id)]
             )
             updated += 1
@@ -382,7 +476,7 @@ enum ItemCategorizer {
     static func resolveItems(
         db: Database, rawNames: [String], taxonomy: Taxonomy, storeName: String?, logURL: URL, provider: any ItemClassificationProvider
     ) async throws -> (entries: [ItemDictionaryEntry], classificationProviders: [String]) {
-        var entries = try await db.query("SELECT * FROM item_dictionary").map(rowToEntry)
+        var entries = try await db.query("SELECT \(entryColumns) FROM item_dictionary").map(rowToEntry)
 
         /// A name with no dictionary entry yet; later occurrences (exact or fuzzy) attach to it.
         struct NewItem {
@@ -409,7 +503,9 @@ enum ItemCategorizer {
                 continue
             }
 
-            let candidates = entries.map(\.canonicalName) + newItems.map(\.normalized)
+            // A flagged entry is a poor-fit fallback, not a verdict: look-alike names must not inherit it (exact name and alias
+            // hits above still return it, so a known flagged item costs no new LLM call).
+            let candidates = entries.filter { !$0.categoryFlagged }.map(\.canonicalName) + newItems.map(\.normalized)
             if !candidates.isEmpty,
                let best = FuzzyMatch.bestMatch(normalized, among: candidates),
                best.score >= fuzzyMatchThreshold {
@@ -462,18 +558,20 @@ enum ItemCategorizer {
                 let newId = try await db.run(
                     """
                     INSERT INTO item_dictionary
-                    (canonical_name, display_name_de, translation_en, category, subcategory, item_group, aliases, needs_review, created_at, last_seen_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (canonical_name, display_name_de, translation_en, category, subcategory, item_group, aliases, needs_review, created_at, last_seen_at,
+                     category_flagged, suggested_category, suggested_parent)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [.text(item.normalized), .text(item.rawName), classification.translationEn.isEmpty ? .null : .text(classification.translationEn), .text(classification.category),
                      .text(classification.subcategory), .text(classification.itemGroup), .text(encodeStringArray(item.aliases)),
-                     .from(classification.needsReview), .text(now), .text(now)]
+                     .from(classification.needsReview), .text(now), .text(now),
+                     .from(classification.categoryFlagged), .from(classification.suggestedCategory), .from(classification.suggestedParent)]
                 )
                 // Each further occurrence on this receipt counts as a sighting, as before.
                 for _ in item.positions.dropFirst() {
                     try await touchEntry(db: db, rowId: Int(newId), alias: nil)
                 }
-                guard let row = try await db.queryOne("SELECT * FROM item_dictionary WHERE id = ?", [.integer(newId)]) else {
+                guard let row = try await db.queryOne("SELECT \(entryColumns) FROM item_dictionary WHERE id = ?", [.integer(newId)]) else {
                     throw DatabaseError.stepFailed("could not read back inserted item_dictionary row", "")
                 }
                 let entry = rowToEntry(row)

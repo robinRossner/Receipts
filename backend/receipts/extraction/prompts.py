@@ -119,6 +119,8 @@ Rules:
 - Oats (Haferflocken) and muesli are Pantry > Cereals & Muesli, never vegetables.
 - Baking paper (Backpapier) is a household foil/paper item, not kitchen roll.
 - If genuinely unsure, use the number for "Other > Miscellaneous > General".
+- If you cannot tell what the item is (cryptic or unreadable name), use the number for "Other > Miscellaneous > General" and do NOT flag it.
+- Missing category: set "no_good_match" to true ONLY when you know exactly what the product is and NONE of the listed categories is a reasonable home for it (for example pet food, when the list has no pet category). Flagging is rare: the large majority of items, and every common grocery, drugstore or household item, fits a listed category, even if the fit is not perfect. A brand name, an abbreviation, unusual wording or a merely imperfect fit is NOT a reason to flag - choose the closest category instead. When you flag, give the number of "Other > Miscellaneous > General" as path_number and propose the missing category: "suggested_category" is its short name (at most 4 words, English, e.g. "Pet Food") and "suggested_parent" says where it would belong: an existing top-level category (e.g. "Household") or "Category > Subcategory" using existing names (e.g. "Household > Household Goods"); a new subcategory name is allowed. When you do not flag, set "no_good_match" to false and both suggestion fields to "".
 
 Respond with ONLY this JSON, no explanation, no markdown fences - exactly one entry per item, using the item's index from the square brackets:
 {
@@ -126,7 +128,10 @@ Respond with ONLY this JSON, no explanation, no markdown fences - exactly one en
     {
       "index": <the item's index>,
       "translation_en": "<natural English translation of what the product actually is>",
-      "path_number": <the single number from the category list above, as an integer>
+      "path_number": <the single number from the category list above, as an integer>,
+      "no_good_match": <true only if no listed category is a reasonable home for the item, otherwise false>,
+      "suggested_category": "<short name of the missing category if no_good_match is true, otherwise empty string>",
+      "suggested_parent": "<Category or Category > Subcategory it would belong under if no_good_match is true, otherwise empty string>"
     }
   ]
 }"""
@@ -213,8 +218,28 @@ def classification_schema(item_count: int, path_numbers: list[int]) -> dict[str,
                 "enum": path_numbers,
                 "description": "Number of the chosen category from the category list",
             },
+            "no_good_match": {
+                "type": "boolean",
+                "description": "True only if no listed category is a reasonable home for the item",
+            },
+            "suggested_category": {
+                "type": "string",
+                "description": "Short name of the missing category when no_good_match, else empty",
+            },
+            "suggested_parent": {
+                "type": "string",
+                "description": "Category or 'Category > Subcategory' it would belong under when "
+                "no_good_match, else empty",
+            },
         },
-        "required": ["index", "translation_en", "path_number"],
+        "required": [
+            "index",
+            "translation_en",
+            "path_number",
+            "no_good_match",
+            "suggested_category",
+            "suggested_parent",
+        ],
         "additionalProperties": False,
     }
     return {

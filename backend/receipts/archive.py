@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from core.db import iso_z, utcnow
 from receipts import photos, state
-from receipts.db.models import ExtractionJob, Receipt
+from receipts.db.models import ExtractionJob, ItemDictionary, Receipt
 from receipts.errors import api_error
 from receipts.settings import ReceiptsSettings
 
@@ -200,6 +200,14 @@ def status(db: Session, settings: ReceiptsSettings, now: datetime | None = None)
         "archive_overdue": overdue,
         "disk_warning": warning,
         "queue": {k: int(queue.get(k, 0)) for k in ("queued", "processing", "done", "failed")},
+        "flagged_items": int(
+            db.scalar(
+                select(func.count(ItemDictionary.id)).where(
+                    ItemDictionary.category_flagged.is_(True), ItemDictionary.deleted_at.is_(None)
+                )
+            )
+            or 0
+        ),
         "llm": provider_status(settings),
     }
 

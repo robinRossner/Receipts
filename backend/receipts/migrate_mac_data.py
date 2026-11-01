@@ -135,6 +135,9 @@ def migrate(
     now = utcnow()
 
     existing_d = set(db.scalars(select(ItemDictionary.id)))
+    # newer Mac databases carry the "no good category" flag; older ones do not have the columns
+    mac_cols = {r[1] for r in mac_db.execute("PRAGMA table_info(item_dictionary)")}
+    has_flag = {"category_flagged", "suggested_category", "suggested_parent"} <= mac_cols
     for row in mac_db.execute("SELECT * FROM item_dictionary ORDER BY id"):
         id_ = uid("dictionary", row["id"])
         if id_ in existing_d:
@@ -155,6 +158,9 @@ def migrate(
                 aliases=[a for a in _json_list(row["aliases"]) if isinstance(a, str)],
                 is_manual_override=bool(row["is_manual_override"]),
                 needs_review=bool(row["needs_review"]),
+                category_flagged=bool(row["category_flagged"]) if has_flag else False,
+                suggested_category=(row["suggested_category"] or None) if has_flag else None,
+                suggested_parent=(row["suggested_parent"] or None) if has_flag else None,
                 times_seen=row["times_seen"] or 1,
                 created_at=created,
                 last_seen_at=seen,

@@ -15,7 +15,12 @@ enum AppPage {
 final class ReceiptStore: ObservableObject {
     let env: AppEnvironment
     let db: Database
-    let taxonomy: Taxonomy
+    /// The bundled taxonomy plus the user-added paths (`taxonomy_additions`); reloaded by `reloadTaxonomy()`.
+    @Published var taxonomy: Taxonomy
+    /// The bundled taxonomy alone (the additions are merged onto it).
+    let baseTaxonomy: Taxonomy
+    /// Items the categoriser could not file ("no good category") and nobody resolved yet; see ReceiptStore+Flagged.
+    @Published var flaggedItemCount = 0
     /// LLM providers + pipeline switches, rebuilt from LLMSettings whenever Settings change.
     private(set) var services: PipelineServices
     /// Cloud sync (off by default): schedules the sync engine and publishes its status for the views.
@@ -45,6 +50,8 @@ final class ReceiptStore: ObservableObject {
     @Published var highlightRequest: HighlightRequest?
     /// Top-level tab; lives here so menu commands (⌘1 / ⌘2) can switch it.
     @Published var page: AppPage = .review
+    /// Mac: the review pane shows the flagged items instead of the selected receipt.
+    @Published var flaggedPaneOpen = false
     /// Id-based selection, set the moment a row is picked (before the detail finishes loading).
     @Published var selectedReceiptID: Int?
     /// Bumped by Edit > Find (⌘F); the search field focuses itself when it changes.
@@ -93,12 +100,18 @@ final class ReceiptStore: ObservableObject {
         self.env = env
         self.db = db
         self.taxonomy = taxonomy
+        self.baseTaxonomy = taxonomy
         self.settings = settings
         self.services = ProviderFactory.makeServices(settings: settings, env: env)
         self.sync = SyncCoordinator(
             store: SyncStore(db: db, paths: env.syncPaths), capabilities: capabilities, deviceId: deviceId,
             reminders: reminders ?? (capabilities.archivesPhotos ? UserNotificationReminder() : NoReminders())
         )
+        // added categories and the flagged count come from the database (an actor), so after init
+        Task { [weak self] in
+            await self?.reloadTaxonomy()
+            await self?.refreshFlaggedCount()
+        }
     }
 
     func report(_ action: String, _ error: Error) {
@@ -144,6 +157,8 @@ final class ReceiptStore: ObservableObject {
 
     func refreshList() async {
         invalidateStatsCache()
+        await reloadTaxonomy()
+        await refreshFlaggedCount()
         do {
             receipts = try await fetchSummaries(deleted: false)
             deletedReceipts = try await fetchSummaries(deleted: true)
@@ -272,7 +287,8 @@ final class ReceiptStore: ObservableObject {
         let itemRows = try await db.query("""
             SELECT li.id, li.item_dictionary_id, li.raw_text, li.name_de,
                    li.quantity, li.unit_price, li.total_price,
-                   d.translation_en, d.category, d.subcategory, d.item_group, d.needs_review
+                   d.translation_en, d.category, d.subcategory, d.item_group, d.needs_review,
+                   d.category_flagged, d.suggested_category, d.suggested_parent
             FROM line_items li JOIN item_dictionary d ON li.item_dictionary_id = d.id
             WHERE li.receipt_id = ? ORDER BY li.position, li.id
             """, [.from(id)])
@@ -282,7 +298,8 @@ final class ReceiptStore: ObservableObject {
                 id: r.int(0) ?? 0, itemDictionaryId: r.int(1) ?? 0, rawText: r.string(2), nameDe: r.string(3),
                 quantity: r.double(4) ?? 0, unitPrice: r.double(5) ?? 0, totalPrice: r.double(6) ?? 0,
                 translationEn: r.string(7), category: r.string(8) ?? "", subcategory: r.string(9) ?? "",
-                itemGroup: r.string(10) ?? "", needsReview: r.bool(11)
+                itemGroup: r.string(10) ?? "", needsReview: r.bool(11),
+                categoryFlagged: r.bool(12), suggestedCategory: r.string(13), suggestedParent: r.string(14)
             )
         }
 
@@ -478,6 +495,7 @@ final class ReceiptStore: ObservableObject {
             return
         }
 
+        await reloadTaxonomy()
         let db = db, env = env, taxonomy = taxonomy, services = services
         let store = self  // @MainActor, hence Sendable; held only for the duration of this job
         let work = Task.detached(priority: .userInitiated) {
@@ -520,43 +538,11 @@ final class ReceiptStore: ObservableObject {
 
     // MARK: - Mutations
 
-    /// Marks the receipt reviewed, then moves on to the next unreviewed one (the one after it in
-    /// the list if any, else the first); stays put when nothing is left to review.
+    /// Marks the receipt reviewed, then moves on to the next one waiting for review (the one after it in the list if any,
+    /// else the first); stays put when nothing is left. Receipts still being read or that failed are skipped.
     func confirmReceipt(id: Int) async {
-        let before = receipts.firstIndex { $0.id == id } ?? 0
-        do {
-            try await db.run("UPDATE receipts SET reviewed_at = ? WHERE id = ?", [.text(isoNow()), .from(id)])
-        } catch { report("Confirming receipt", error) }
-        await refreshList()
-        let pending = receipts.enumerated().filter { $0.element.reviewedAt == nil && $0.element.id != id }
-        if let next = pending.first(where: { $0.offset > before }) ?? pending.first {
-            await loadReceiptDetail(id: next.element.id)
-        } else {
-            await loadReceiptDetail(id: id)
-        }
-    }
-
-    func confirmSelectedReceipt() async {
-        guard let detail = selectedReceipt, detail.reviewedAt == nil else { return }
-        await confirmReceipt(id: detail.id)
-    }
-
-    /// Unreviewed receipts without any review reason (what "Confirm all without flags" affects).
-    var unflaggedUnreviewedCount: Int { receipts.filter { $0.reviewedAt == nil && !$0.needsReview }.count }
-
-    func confirmAllWithoutFlags() async {
-        do {
-            try await db.run(
-                """
-                UPDATE receipts SET reviewed_at = ?
-                WHERE reviewed_at IS NULL AND deleted_at IS NULL AND needs_review = 0
-                  AND (review_reasons IS NULL OR review_reasons IN ('', '[]'))
-                """,
-                [.text(isoNow())]
-            )
-        } catch { report("Confirming receipts", error) }
-        await refreshList()
-        if let id = selectedReceiptID { await loadReceiptDetail(id: id) }
+        await markReviewed(id: id)
+        await loadReceiptDetail(id: ReviewQueue.next(after: id, in: receipts)?.id ?? id)
     }
 
     /// How many line items (and receipts) share this dictionary entry, i.e. what a category
@@ -589,6 +575,7 @@ final class ReceiptStore: ObservableObject {
         }
         busyReceiptIDs.insert(id)
         defer { busyReceiptIDs.remove(id) }
+        await reloadTaxonomy()
         let db = db, env = env, taxonomy = taxonomy, services = services
         let result = await Task.detached(priority: .userInitiated) {
             await ReceiptPipeline.reprocessReceipt(receiptId: id, db: db, env: env, taxonomy: taxonomy, services: services)
@@ -608,6 +595,7 @@ final class ReceiptStore: ObservableObject {
         do {
             let rows = try await db.query("SELECT DISTINCT item_dictionary_id FROM line_items WHERE receipt_id = ?", [.from(id)])
             let storeName = selectedReceipt?.id == id ? selectedReceipt?.store : nil
+            await reloadTaxonomy()
             let db = db, taxonomy = taxonomy, services = services, log = env.classificationLogURL
             let ids = rows.compactMap { $0.int(0) }
             _ = try await Task.detached(priority: .userInitiated) {
@@ -627,13 +615,15 @@ final class ReceiptStore: ObservableObject {
                 UPDATE item_dictionary
                 SET category = ?, subcategory = ?, item_group = ?,
                     translation_en = COALESCE(?, translation_en),
-                    is_manual_override = 1, needs_review = 0
+                    is_manual_override = 1, needs_review = 0,
+                    category_flagged = 0, suggested_category = NULL, suggested_parent = NULL
                 WHERE id = ?
                 """,
                 [.text(category), .text(subcategory), .text(itemGroup), .from(translationEn), .from(itemDictionaryId)]
             )
         } catch { report("Saving category", error) }
         invalidateStatsCache()
+        await refreshFlaggedCount()
         await loadReceiptDetail(id: receiptId)
     }
 
@@ -664,6 +654,7 @@ final class ReceiptStore: ObservableObject {
             guard let row = try await db.queryOne("SELECT store FROM receipts WHERE id = ?", [.from(receiptId)]) else { return }
             let store = row.string(0)
             let totalPrice = round2(quantity * unitPrice)
+            await reloadTaxonomy()
             let entry = try await ItemCategorizer.getOrCreateItem(
                 db: db, rawName: name, taxonomy: taxonomy, storeName: store, logURL: env.classificationLogURL,
                 provider: services.classification

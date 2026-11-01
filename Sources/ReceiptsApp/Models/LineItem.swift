@@ -15,6 +15,11 @@ struct LineItemDetail: Identifiable, Hashable {
     var subcategory: String
     var itemGroup: String
     var needsReview: Bool
+    /// The categoriser found no good category and filed the item under Other > Miscellaneous > General until the user
+    /// resolves it (see ReceiptStore+Flagged). Defaults keep existing initialisers working.
+    var categoryFlagged: Bool = false
+    var suggestedCategory: String? = nil
+    var suggestedParent: String? = nil
 }
 
 /// A dictionary entry describing one canonical product (item_dictionary table).
@@ -32,4 +37,8 @@ struct ItemDictionaryEntry {
     var timesSeen: Int
     var createdAt: String
     var lastSeenAt: String
+    /// "No good category": see `LineItemDetail.categoryFlagged`. `suggestedParent` is "Category" or "Category > Subcategory".
+    var categoryFlagged: Bool = false
+    var suggestedCategory: String? = nil
+    var suggestedParent: String? = nil
 }

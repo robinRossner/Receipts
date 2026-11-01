@@ -31,7 +31,7 @@ from receipts import archive, photos, worker
 from receipts.db.models import ExtractionJob, ItemDictionary, Receipt
 from receipts.db.session import get_db
 from receipts.errors import api_error
-from receipts.extraction.taxonomy import get_taxonomy
+from receipts.extraction.taxonomy import merged_taxonomy
 from receipts.settings import get_settings
 from receipts.sync import pull as pull_mod
 from receipts.sync import push as push_mod
@@ -209,19 +209,27 @@ def status(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.get("/taxonomy")
-def taxonomy() -> dict[str, Any]:
-    return get_taxonomy().to_json()
+def taxonomy(db: Session = Depends(get_db)) -> dict[str, Any]:
+    return merged_taxonomy(db).to_json()  # bundled categories + client additions
 
 
 @router.get("/dictionary")
 def dictionary(
-    include_deleted: bool = Query(False), db: Session = Depends(get_db)
+    include_deleted: bool = Query(False),
+    flagged: bool = Query(False, description="only live entries flagged as missing a category"),
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     q = select(ItemDictionary).order_by(ItemDictionary.canonical_name)
-    if not include_deleted:
+    if flagged:
+        q = q.where(ItemDictionary.category_flagged.is_(True), ItemDictionary.deleted_at.is_(None))
+    elif not include_deleted:
         q = q.where(ItemDictionary.deleted_at.is_(None))
     entries = [dictionary_out(d) for d in db.scalars(q)]
-    return {"count": len(entries), "taxonomy_version": get_taxonomy().version, "entries": entries}
+    return {
+        "count": len(entries),
+        "taxonomy_version": merged_taxonomy(db).version,
+        "entries": entries,
+    }
 
 
 # --------------------------------------------------------------------------- sync

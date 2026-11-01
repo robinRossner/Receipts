@@ -5,6 +5,10 @@ to one batched LLM classification call.
 
 Entries a user edited (`is_manual_override`) are never touched here beyond the usage counters and
 aliases; new names create new entries, so an extraction cannot overwrite a correction.
+
+An item the model says has no good category in the taxonomy becomes a flagged dictionary entry
+(`category_flagged`, fallback category, `needs_review`, a proposed missing category): it is listed
+for a client to resolve later, and every receipt using the entry is fixed by that one resolution.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from receipts.extraction.prompts import (
     STORE_TYPE_HINTS,
     classification_schema,
 )
-from receipts.extraction.taxonomy import Path3, Taxonomy
+from receipts.extraction.taxonomy import FALLBACK_PATH, Path3, Taxonomy
 from receipts.llm.base import LLMProvider
 
 log = logging.getLogger(__name__)
@@ -64,9 +68,75 @@ class Classification:
     subcategory: str
     item_group: str
     needs_review: bool
+    # no good category in the taxonomy: filed under the fallback path, suggestions say what is
+    # missing (None when the model gave nothing usable)
+    category_flagged: bool = False
+    suggested_category: str | None = None
+    suggested_parent: str | None = None
 
 
-_Answer = tuple[str | None, int | None]  # (translation_en, path_number)
+@dataclass
+class _Answer:
+    translation_en: str | None
+    path_number: int | None
+    no_good_match: bool = False
+    suggested_category: str | None = None
+    suggested_parent: str | None = None
+
+
+MAX_SUGGESTION_PART = 60
+_QUOTES = "\"'`\u201c\u201d\u201e\u2018\u2019\u00ab\u00bb"
+
+
+def _coerce_bool(value: object) -> bool:
+    """true / "true" / 1 are true; anything else (missing, false, "no", ...) is not."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1")
+    return False
+
+
+def _clean(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return _SPACES.sub(" ", value).strip().strip(_QUOTES).strip()
+
+
+def sanitize_suggestion(
+    category: object, parent: object, taxonomy: Taxonomy
+) -> tuple[str | None, str | None, Path3 | None]:
+    """Clean what the model proposed for a missing category.
+
+    Returns (suggested_category, suggested_parent, existing_path). `suggested_category` is a short
+    leaf name (no ">", truncated to 60), `suggested_parent` is "Category" or "Category > Sub" with
+    existing names spelled as in the taxonomy. `existing_path` is set when the suggestion resolves
+    to a path the taxonomy already has: the caller then files the item there instead of flagging.
+    """
+    leaf = _clean(category)
+    leaf_out = None if not leaf or ">" in leaf else leaf[:MAX_SUGGESTION_PART].rstrip()
+    parts = [_clean(p) for p in parent.split(">")] if isinstance(parent, str) else []
+    if len(parts) not in (1, 2) or any(not p or len(p) > MAX_SUGGESTION_PART for p in parts):
+        return leaf_out or None, None, None
+    cat_entry = next((c for c in taxonomy.categories if c[0].lower() == parts[0].lower()), None)
+    if cat_entry is not None:
+        parts[0] = cat_entry[0]
+        if len(parts) == 2:
+            sub_entry = next((s for s in cat_entry[1] if s[0].lower() == parts[1].lower()), None)
+            if sub_entry is not None:
+                parts[1] = sub_entry[0]
+    parent_out = " > ".join(parts)
+    existing = None
+    if leaf_out:
+        wanted = (
+            Path3(parts[0], parts[1], leaf_out)
+            if len(parts) == 2
+            else Path3(parts[0], leaf_out, "General")
+        )
+        existing = taxonomy.contains_ci(wanted)
+    return leaf_out, parent_out, existing
 
 
 def _call_llm(
@@ -103,21 +173,41 @@ def _call_llm(
             index = coerce_int(entry.get("index"))
             if index is None or not 1 <= index <= len(item_names) or index in answers:
                 continue
-            answers[index] = (
+            answers[index] = _Answer(
                 coerce_str(entry.get("translation_en")),
                 coerce_int(entry.get("path_number")),
+                _coerce_bool(entry.get("no_good_match")),
+                coerce_str(entry.get("suggested_category")),
+                coerce_str(entry.get("suggested_parent")),
             )
     elif len(item_names) == 1 and obj.get("path_number") is not None:
         # single item answered in the old flat shape
-        answers[1] = (coerce_str(obj.get("translation_en")), coerce_int(obj.get("path_number")))
+        answers[1] = _Answer(
+            coerce_str(obj.get("translation_en")), coerce_int(obj.get("path_number"))
+        )
     return answers, response.provider_id
+
+
+def _flagged(translation: str, answer: _Answer, taxonomy: Taxonomy) -> Classification:
+    """The model found no fitting category: file the item under the fallback path, flagged, with
+    the sanitised suggestion. A suggestion that names a path the taxonomy already has is not a
+    missing category: the item simply goes there."""
+    leaf, parent, existing = sanitize_suggestion(
+        answer.suggested_category, answer.suggested_parent, taxonomy
+    )
+    if existing is not None:
+        return Classification(
+            translation, existing.category, existing.subcategory, existing.item_group, False
+        )
+    return Classification(translation, *FALLBACK_PATH, True, True, leaf, parent)
 
 
 def classify_with_llm(
     item_names: list[str], taxonomy: Taxonomy, store_name: str | None, provider: LLMProvider
 ) -> tuple[list[Classification], list[str]]:
     """One LLM call per chunk; answers that are missing or not a valid taxonomy number get one
-    batched retry, then fall back to Other > Miscellaneous > General with needs_review."""
+    batched retry, then fall back to Other > Miscellaneous > General with needs_review. Items the
+    model flags as having no good category are not retried (see `_flagged`)."""
     taxonomy_list, index_map = taxonomy.numbered_prompt()
     path_numbers = sorted(index_map)
     ctx = store_context(store_name)
@@ -137,7 +227,11 @@ def classify_with_llm(
                 lines = []
                 for b, pos in enumerate(pending):
                     prev = last_answers.get(pos)
-                    number = "null" if prev is None or prev[1] is None else str(prev[1])
+                    number = (
+                        "null"
+                        if prev is None or prev.path_number is None
+                        else str(prev.path_number)
+                    )
                     lines.append(f'[{b + 1}] "{chunk[pos]}": you answered {number}')
                 correction = (
                     "Your previous answers for these items were not valid numbers from the "
@@ -155,17 +249,19 @@ def classify_with_llm(
             for b, pos in enumerate(pending):
                 answer = answers.get(b + 1)
                 last_answers[pos] = answer
-                path = index_map.get(answer[1]) if answer and answer[1] is not None else None
+                translation = (answer.translation_en if answer else None) or chunk[pos]
+                if answer is not None and answer.no_good_match:
+                    resolved[pos] = _flagged(translation, answer, taxonomy)  # never retried
+                    log.debug("classified %r attempt=%d flagged", chunk[pos], attempt)
+                    continue
+                number = answer.path_number if answer else None
+                path = index_map.get(number) if number is not None else None
                 log.debug(
                     "classified %r attempt=%d valid=%s", chunk[pos], attempt, path is not None
                 )
                 if path is not None:
                     resolved[pos] = Classification(
-                        (answer[0] if answer and answer[0] else None) or chunk[pos],
-                        path.category,
-                        path.subcategory,
-                        path.item_group,
-                        False,
+                        translation, path.category, path.subcategory, path.item_group, False
                     )
                 else:
                     still.append(pos)
@@ -177,8 +273,9 @@ def classify_with_llm(
                 prev = last_answers.get(pos)
                 results.append(
                     Classification(
-                        (prev[0] if prev and prev[0] else None) or chunk[pos],
-                        *("Other", "Miscellaneous", "General"),
+                        (prev.translation_en if prev and prev.translation_en else None)
+                        or chunk[pos],
+                        *FALLBACK_PATH,
                         True,
                     )
                 )
@@ -237,7 +334,12 @@ def resolve_items(
             same_new.positions.append(position)
             continue
 
-        candidates = [e.canonical_name for e in entries] + [n.normalized for n in new_items]
+        # A flagged entry holds a poor-fit fallback: look-alike items must not inherit it (they get
+        # their own classification), so it is no fuzzy candidate. Exact name / alias hits above
+        # still return it unchanged.
+        candidates = [e.canonical_name for e in entries if not e.category_flagged] + [
+            n.normalized for n in new_items
+        ]
         best = (
             fuzzy.best_match(normalized, candidates, floor=FUZZY_MATCH_THRESHOLD)
             if candidates
@@ -289,6 +391,9 @@ def resolve_items(
                 aliases=list(item.aliases),
                 is_manual_override=False,
                 needs_review=cls.needs_review,
+                category_flagged=cls.category_flagged,
+                suggested_category=cls.suggested_category,
+                suggested_parent=cls.suggested_parent,
                 times_seen=1 + max(len(item.positions) - 1, 0),  # each repeat is a sighting
                 created_at=now,
                 last_seen_at=now,

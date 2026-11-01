@@ -12,6 +12,10 @@ final class FakeReceiptsServer: ReceiptsAPI, @unchecked Sendable {
     var items: [String: WireLineItem] = [:]
     var dictionary: [String: WireDictionaryEntry] = [:]
     var photos: [String: Data] = [:]
+    /// User-added category paths (append-only, like the real server's).
+    var taxonomyAdditions: [WireTaxonomyAddition] = []
+    /// Simulates a server from before the flagged-categories feature: pulls carry neither the flag fields nor the additions.
+    var legacyServer = false
     private var seq: [String: Int] = [:]
     private var counter = 0
 
@@ -100,12 +104,29 @@ final class FakeReceiptsServer: ReceiptsAPI, @unchecked Sendable {
         try guarded("push") {
             pushLog.append(request)
             var results: [PushResult] = []
+            for a in request.taxonomyAdditions ?? [] {
+                if taxonomyAdditions.contains(where: { $0.label.lowercased() == a.label.lowercased() }) {
+                    results.append(.init(entity: .taxonomyAddition, id: a.label, status: .stale))
+                } else {
+                    taxonomyAdditions.append(a)
+                    results.append(.init(entity: .taxonomyAddition, id: a.label, status: .applied))
+                }
+            }
             for d in request.dictionary {
                 if let old = dictionary[d.id], !newer(d.updatedAt, than: old.updatedAt) { results.append(.init(entity: .dictionary, id: d.id, status: .stale)); continue }
                 if d.deletedAt == nil, dictionary.values.contains(where: { $0.canonicalName == d.canonicalName && $0.id != d.id && $0.deletedAt == nil }) {
                     results.append(.init(entity: .dictionary, id: d.id, status: .rejected, reason: "canonical_name already used")); continue
                 }
                 var merged = d
+                // Same rule as the real server (docs/api/receipts.md, "Flagged categories"): an absent flag keeps the stored
+                // value, unless the category changed (then the flag is resolved); a cleared flag drops the suggestion.
+                if let old = dictionary[d.id], d.categoryFlagged == nil {
+                    let same = old.category == d.category && old.subcategory == d.subcategory && old.itemGroup == d.itemGroup
+                    merged.categoryFlagged = same ? old.categoryFlagged : false
+                    merged.suggestedCategory = same ? old.suggestedCategory : nil
+                    merged.suggestedParent = same ? old.suggestedParent : nil
+                }
+                if merged.categoryFlagged != true { merged.suggestedCategory = nil; merged.suggestedParent = nil }
                 merged.timesSeen = dictionary[d.id]?.timesSeen ?? 1
                 dictionary[d.id] = merged; bump("dictionary:" + d.id)
                 results.append(.init(entity: .dictionary, id: d.id, status: .applied))
@@ -143,13 +164,17 @@ final class FakeReceiptsServer: ReceiptsAPI, @unchecked Sendable {
             for (key, _) in page {
                 let parts = key.split(separator: ":", maxSplits: 1).map(String.init)
                 switch parts[0] {
-                case "dictionary": d.append(dictionary[parts[1]]!)
+                case "dictionary":
+                    var entry = dictionary[parts[1]]!
+                    if legacyServer { entry.categoryFlagged = nil; entry.suggestedCategory = nil; entry.suggestedParent = nil }
+                    d.append(entry)
                 case "receipt": r.append(receipts[parts[1]]!)
                 default: l.append(items[parts[1]]!)
                 }
             }
             let cursor = page.last.map { "c\($0.value)" } ?? since ?? "c0"
-            return PullResponse(cursor: cursor, hasMore: all.count > page.count, serverTime: now(), taxonomyVersion: nil, dictionary: d, receipts: r, lineItems: l)
+            return PullResponse(cursor: cursor, hasMore: all.count > page.count, serverTime: now(), taxonomyVersion: nil, dictionary: d, receipts: r, lineItems: l,
+                                taxonomyAdditions: legacyServer ? nil : taxonomyAdditions)
         }
     }
 

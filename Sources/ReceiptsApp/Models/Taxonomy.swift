@@ -67,6 +67,11 @@ struct Taxonomy: Decodable, Sendable {
     /// Rules whose `path` string wasn't "A > B > C" (reported by `validate()`).
     private let malformedRulePaths: [String]
 
+    /// Memberwise init used by `adding(_:)` (the Decodable init above is the only other way in).
+    private init(categories: [Category], notes: [String: String], keywordRules: [KeywordRule], malformedRulePaths: [String]) {
+        self.categories = categories; self.notes = notes; self.keywordRules = keywordRules; self.malformedRulePaths = malformedRulePaths
+    }
+
     private enum RootKeys: String, CodingKey { case categories, notes, keywordRules = "keyword_rules" }
     private struct DynamicKey: CodingKey {
         var stringValue: String
@@ -104,6 +109,66 @@ struct Taxonomy: Decodable, Sendable {
         }
         keywordRules = rules
         malformedRulePaths = bad
+    }
+
+    // ---- User-added categories ----
+
+    /// Longest allowed name of one level of an added category (same limit as the server's).
+    static let maxAddedPartLength = 60
+
+    /// Why `path` cannot be added to the taxonomy (nil = fine): every level needs a name of at most 60
+    /// characters without ">" (the path separator) or control characters. Same rule as the server.
+    static func additionProblem(_ path: Path) -> String? {
+        for (level, part) in [("category", path.category), ("subcategory", path.subcategory), ("item group", path.itemGroup)] {
+            if part.trimmingCharacters(in: .whitespaces).isEmpty { return "The \(level) name is empty." }
+            if part != part.trimmingCharacters(in: .whitespaces) { return "The \(level) name has leading or trailing spaces." }
+            if part.count > maxAddedPartLength { return "The \(level) name is longer than \(maxAddedPartLength) characters." }
+            if part.contains(">") { return "The \(level) name must not contain \">\"." }
+            if part.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) { return "The \(level) name has control characters." }
+        }
+        return nil
+    }
+
+    /// The path of this taxonomy that equals `path` ignoring case (spelled as the taxonomy spells it).
+    func canonicalPath(matching path: Path) -> Path? {
+        for c in categories where c.name.caseInsensitiveCompare(path.category) == .orderedSame {
+            for s in c.subcategories where s.name.caseInsensitiveCompare(path.subcategory) == .orderedSame {
+                if let g = s.itemGroups.first(where: { $0.caseInsensitiveCompare(path.itemGroup) == .orderedSame }) { return Path(c.name, s.name, g) }
+            }
+        }
+        return nil
+    }
+
+    /// Existing spelling of a category / subcategory name (case-insensitive), nil when it does not exist.
+    func canonicalCategory(_ name: String) -> String? { categories.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.name }
+    func canonicalSubcategory(_ name: String, in category: String) -> String? {
+        categories.first { $0.name.caseInsensitiveCompare(category) == .orderedSame }?
+            .subcategories.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.name
+    }
+
+    /// This taxonomy plus user-added paths, merged exactly like the server does: a path appends its group to an existing
+    /// subcategory, else adds a subcategory to an existing category, else a new category; at the end, in the given order,
+    /// matching existing names case-insensitively. Paths already present (ignoring case) change nothing.
+    func adding(_ paths: [Path]) -> Taxonomy {
+        guard !paths.isEmpty else { return self }
+        var cats = categories
+        for p in paths {
+            if let ci = cats.firstIndex(where: { $0.name.caseInsensitiveCompare(p.category) == .orderedSame }) {
+                if let si = cats[ci].subcategories.firstIndex(where: { $0.name.caseInsensitiveCompare(p.subcategory) == .orderedSame }) {
+                    let sub = cats[ci].subcategories[si]
+                    if !sub.itemGroups.contains(where: { $0.caseInsensitiveCompare(p.itemGroup) == .orderedSame }) {
+                        var subs = cats[ci].subcategories
+                        subs[si] = Subcategory(name: sub.name, itemGroups: sub.itemGroups + [p.itemGroup])
+                        cats[ci] = Category(name: cats[ci].name, subcategories: subs)
+                    }
+                } else {
+                    cats[ci] = Category(name: cats[ci].name, subcategories: cats[ci].subcategories + [Subcategory(name: p.subcategory, itemGroups: [p.itemGroup])])
+                }
+            } else {
+                cats.append(Category(name: p.category, subcategories: [Subcategory(name: p.subcategory, itemGroups: [p.itemGroup])]))
+            }
+        }
+        return Taxonomy(categories: cats, notes: notes, keywordRules: keywordRules, malformedRulePaths: malformedRulePaths)
     }
 
     // ---- Keyword routing + validation ----

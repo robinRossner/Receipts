@@ -28,10 +28,11 @@ struct PushBatch: Sendable {
     var dictionary: [WireDictionaryEntry] = []
     var receipts: [WireReceipt] = []
     var lineItems: [WireLineItem] = []
+    var taxonomyAdditions: [WireTaxonomyAddition] = []
     /// `entity:uuid` -> the `updated_at` that was sent.
     var stamps: [String: String] = [:]
-    var isEmpty: Bool { dictionary.isEmpty && receipts.isEmpty && lineItems.isEmpty }
-    var count: Int { dictionary.count + receipts.count + lineItems.count }
+    var isEmpty: Bool { dictionary.isEmpty && receipts.isEmpty && lineItems.isEmpty && taxonomyAdditions.isEmpty }
+    var count: Int { dictionary.count + receipts.count + lineItems.count + taxonomyAdditions.count }
 
     static func key(_ entity: PushResult.Entity, _ id: String) -> String { "\(entity.rawValue):\(id)" }
 }
@@ -47,6 +48,8 @@ struct ApplySummary: Sendable, Equatable {
     var receipts = 0
     var lineItems = 0
     var deletedLocally = 0
+    /// New category paths received (see `WireTaxonomyAddition`).
+    var taxonomyAdditions = 0
     /// Line items whose receipt or dictionary entry is unknown (the server sent inconsistent data); skipped.
     var unresolved = 0
 }
@@ -86,6 +89,7 @@ struct SyncStore: Sendable {
                         AND COALESCE(extraction_status, '') NOT IN ('pending_upload', 'upload_failed'))
                  + (SELECT COUNT(*) FROM line_items WHERE sync_state = 'dirty' AND uuid IS NOT NULL)
                  + (SELECT COUNT(*) FROM item_dictionary WHERE sync_state = 'dirty' AND uuid IS NOT NULL)
+                 + (SELECT COUNT(*) FROM taxonomy_additions WHERE sync_state = 'dirty')
                  + (SELECT COUNT(*) FROM sync_tombstones WHERE pushed = 0)
             """)
         return row?.int(0) ?? 0
@@ -120,6 +124,13 @@ struct SyncStore: Sendable {
             case .dictionary: batch.dictionary = try Self.dirtyDictionary(c, limit: limit)
             case .receipt: batch.receipts = try Self.dirtyReceipts(c, paths: pathsCopy, limit: limit)
             case .lineItem: batch.lineItems = try Self.dirtyLineItems(c, limit: limit)
+            case .taxonomyAddition:
+                batch.taxonomyAdditions = try c.query("""
+                    SELECT category, subcategory, item_group, created_at FROM taxonomy_additions
+                    WHERE sync_state = 'dirty' ORDER BY created_at, id LIMIT ?
+                    """, [.from(limit)]).map {
+                    WireTaxonomyAddition(category: $0.string(0) ?? "", subcategory: $0.string(1) ?? "", itemGroup: $0.string(2) ?? "", createdAt: $0.string(3))
+                }
             }
             try Self.addTombstones(c, entity: entity, to: &batch, limit: limit)
             for d in batch.dictionary { batch.stamps[PushBatch.key(.dictionary, d.id)] = d.updatedAt }
@@ -132,13 +143,14 @@ struct SyncStore: Sendable {
     private static func dirtyDictionary(_ c: SQLConnection, limit: Int) throws -> [WireDictionaryEntry] {
         try c.query("""
             SELECT uuid, canonical_name, display_name_de, translation_en, category, subcategory, item_group, aliases,
-                   is_manual_override, needs_review, updated_at
+                   is_manual_override, needs_review, updated_at, category_flagged, suggested_category, suggested_parent
             FROM item_dictionary WHERE sync_state = 'dirty' AND uuid IS NOT NULL ORDER BY id LIMIT ?
             """, [.from(limit)]).map { r in
             WireDictionaryEntry(
                 id: r.string(0) ?? "", canonicalName: r.string(1) ?? "", displayNameDe: r.string(2), translationEn: r.string(3),
                 category: r.string(4), subcategory: r.string(5), itemGroup: r.string(6), aliases: decodeStringArray(r.string(7)),
-                isManualOverride: r.bool(8), needsReview: r.bool(9), updatedAt: r.string(10) ?? SyncDate.now()
+                isManualOverride: r.bool(8), needsReview: r.bool(9), updatedAt: r.string(10) ?? SyncDate.now(),
+                categoryFlagged: r.bool(11), suggestedCategory: r.string(12), suggestedParent: r.string(13)
             ).forPush()
         }
     }
@@ -240,6 +252,19 @@ struct SyncStore: Sendable {
                 case .dictionary: table = "item_dictionary"
                 case .receipt: table = "receipts"
                 case .lineItem: table = "line_items"
+                case .taxonomyAddition:
+                    // `id` is the path "A > B > C" as the server stored it (its spelling of existing names may differ in case)
+                    let state = result.status == .rejected ? "rejected" : "synced"
+                    switch result.status {
+                    case .applied: summary.applied += 1
+                    case .stale: summary.stale += 1
+                    case .rejected: summary.rejected.append("taxonomy_addition \(id): \(result.reason ?? "rejected")")
+                    }
+                    try c.run("""
+                        UPDATE taxonomy_additions SET sync_state = ?, sync_error = ?
+                        WHERE sync_state = 'dirty' AND lower(category || ' > ' || subcategory || ' > ' || item_group) = lower(?)
+                        """, [.text(state), .from(result.status == .rejected ? (result.reason ?? "rejected") : nil), .text(id)])
+                    continue
                 }
                 let stamp = batch.stamps[PushBatch.key(result.entity, id)]
                 switch result.status {
@@ -272,11 +297,13 @@ struct SyncStore: Sendable {
 
     /// Applies pulled pages (already merged: the last version of a record wins) in ONE transaction, with change
     /// tracking switched off so the sync's own writes are not mistaken for edits.
-    func applyPull(dictionary: [WireDictionaryEntry], receipts: [WireReceipt], lineItems: [WireLineItem]) async throws -> ApplySummary {
+    func applyPull(dictionary: [WireDictionaryEntry], receipts: [WireReceipt], lineItems: [WireLineItem],
+                   taxonomyAdditions: [WireTaxonomyAddition] = []) async throws -> ApplySummary {
         try await db.transaction { c in
             try c.run("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('applying', '1')")
             var summary = ApplySummary()
-            try PullApplier(c: c).run(dictionary: dictionary, receipts: receipts, lineItems: lineItems, into: &summary)
+            try PullApplier(c: c).run(dictionary: dictionary, receipts: receipts, lineItems: lineItems,
+                                      taxonomyAdditions: taxonomyAdditions, into: &summary)
             try c.run("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('applying', '0')")
             return summary
         }
@@ -386,7 +413,10 @@ struct SyncStore: Sendable {
 private struct PullApplier {
     let c: SQLConnection
 
-    func run(dictionary: [WireDictionaryEntry], receipts: [WireReceipt], lineItems: [WireLineItem], into summary: inout ApplySummary) throws {
+    func run(dictionary: [WireDictionaryEntry], receipts: [WireReceipt], lineItems: [WireLineItem],
+             taxonomyAdditions: [WireTaxonomyAddition] = [], into summary: inout ApplySummary) throws {
+        // 0. new category paths first: a dictionary entry may use one
+        for a in taxonomyAdditions { try upsertAddition(a, &summary) }
         // 1. dictionary (live), 2. receipts, 3. line items, 4. dictionary tombstones last: a merge delivers the
         // line items' new dictionary id and the merged-away entry's tombstone together.
         for entry in dictionary where entry.deletedAt == nil { try upsertDictionary(entry, &summary) }
@@ -406,6 +436,25 @@ private struct PullApplier {
         try c.queryOne("SELECT id FROM \(table) WHERE uuid = ?", [.text(uuid)])?.int(0)
     }
 
+    // MARK: taxonomy additions
+
+    /// The server's list is authoritative and append-only: a path we do not have is added as synced, one we hold as
+    /// dirty is now acknowledged (the server has it).
+    private func upsertAddition(_ a: WireTaxonomyAddition, _ summary: inout ApplySummary) throws {
+        guard Taxonomy.additionProblem(a.path) == nil else { return }
+        let existing = try c.queryOne("""
+            SELECT id FROM taxonomy_additions WHERE lower(category) = lower(?) AND lower(subcategory) = lower(?) AND lower(item_group) = lower(?)
+            """, [.text(a.category), .text(a.subcategory), .text(a.itemGroup)])?.int(0)
+        if let existing {
+            try c.run("UPDATE taxonomy_additions SET sync_state = 'synced', sync_error = NULL WHERE id = ?", [.from(existing)])
+        } else {
+            try c.run("""
+                INSERT INTO taxonomy_additions (category, subcategory, item_group, created_at, sync_state) VALUES (?, ?, ?, ?, 'synced')
+                """, [.text(a.category), .text(a.subcategory), .text(a.itemGroup), .text(a.createdAt ?? SyncDate.now())])
+            summary.taxonomyAdditions += 1
+        }
+    }
+
     // MARK: dictionary
 
     private func upsertDictionary(_ e: WireDictionaryEntry, _ summary: inout ApplySummary) throws {
@@ -413,7 +462,10 @@ private struct PullApplier {
         if let t = try localTombstone("dictionary", e.id),
            SyncMerge.localDeleteWins(deletedAt: t.deleted, serverUpdatedAt: serverStamp) { return }
         let aliases = encodeStringArray(e.aliases)
-        let local = try c.queryOne("SELECT id, sync_state, updated_at FROM item_dictionary WHERE uuid = ?", [.text(e.id)])
+        let local = try c.queryOne("""
+            SELECT id, sync_state, updated_at, category, subcategory, item_group, category_flagged, suggested_category, suggested_parent
+            FROM item_dictionary WHERE uuid = ?
+            """, [.text(e.id)])
         guard let local, let localId = local.int(0) else {
             try insertDictionary(e, aliases: aliases)
             summary.dictionary += 1
@@ -426,12 +478,25 @@ private struct PullApplier {
         guard decision == .takeServer else { return }
         // a different local row may hold the name (a local-only entry the server never heard of)
         try freeName(e.canonicalName, except: localId)
+        // The flag: the server's when it sends one. A server that does not know the flag omits it: keep ours, unless the
+        // category changed (somebody chose a category, which resolves the flag).
+        var flagged = e.categoryFlagged ?? false, suggestedCategory = e.suggestedCategory, suggestedParent = e.suggestedParent
+        if e.categoryFlagged == nil {
+            let sameCategory = local.string(3) == e.category && local.string(4) == e.subcategory && local.string(5) == e.itemGroup
+            flagged = sameCategory && local.bool(6)
+            suggestedCategory = flagged ? local.string(7) : nil
+            suggestedParent = flagged ? local.string(8) : nil
+        } else if !flagged {
+            suggestedCategory = nil; suggestedParent = nil
+        }
         try c.run("""
             UPDATE item_dictionary SET canonical_name = ?, display_name_de = ?, translation_en = ?, category = ?, subcategory = ?,
-                item_group = ?, aliases = ?, is_manual_override = ?, needs_review = ?, updated_at = ?, sync_state = 'synced', sync_error = NULL
+                item_group = ?, aliases = ?, is_manual_override = ?, needs_review = ?, category_flagged = ?, suggested_category = ?,
+                suggested_parent = ?, updated_at = ?, sync_state = 'synced', sync_error = NULL
             WHERE id = ?
             """, [.text(e.canonicalName), .from(e.displayNameDe), .from(e.translationEn), .from(e.category), .from(e.subcategory),
-                  .from(e.itemGroup), .text(aliases), .from(e.isManualOverride), .from(e.needsReview), .text(e.updatedAt), .from(localId)])
+                  .from(e.itemGroup), .text(aliases), .from(e.isManualOverride), .from(e.needsReview), .from(flagged),
+                  .from(suggestedCategory), .from(suggestedParent), .text(e.updatedAt), .from(localId)])
         summary.dictionary += 1
     }
 
@@ -444,11 +509,14 @@ private struct PullApplier {
         }
         let newId = try c.run("""
             INSERT INTO item_dictionary (uuid, canonical_name, display_name_de, translation_en, category, subcategory, item_group, aliases,
-                is_manual_override, needs_review, times_seen, created_at, last_seen_at, updated_at, sync_state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced')
+                is_manual_override, needs_review, times_seen, created_at, last_seen_at, updated_at, sync_state,
+                category_flagged, suggested_category, suggested_parent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?, ?)
             """, [.text(e.id), .text(e.canonicalName), .from(e.displayNameDe), .from(e.translationEn), .from(e.category), .from(e.subcategory),
                   .from(e.itemGroup), .text(aliases), .from(e.isManualOverride), .from(e.needsReview), .from(e.timesSeen ?? 1),
-                  .from(e.createdAt ?? e.updatedAt), .from(e.lastSeenAt ?? e.updatedAt), .text(e.updatedAt)])
+                  .from(e.createdAt ?? e.updatedAt), .from(e.lastSeenAt ?? e.updatedAt), .text(e.updatedAt),
+                  .from(e.categoryFlagged ?? false), .from((e.categoryFlagged ?? false) ? e.suggestedCategory : nil),
+                  .from((e.categoryFlagged ?? false) ? e.suggestedParent : nil)])
         if let clash {
             // the moved items are a local change as far as the server is concerned
             try c.run("UPDATE line_items SET item_dictionary_id = ?, sync_state = 'dirty', updated_at = ? WHERE item_dictionary_id = ?",

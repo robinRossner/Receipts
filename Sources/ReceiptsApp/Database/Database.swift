@@ -279,6 +279,11 @@ actor Database {
         Migration(version: 7, name: "sync fields and change tracking") { c, _ in
             try SyncSchema.apply(c)
         },
+        // 8: "no good category" flags on dictionary entries (+ the suggestion) and the user-added taxonomy paths. Additive:
+        // old rows get flag 0 and no suggestion, nothing else changes (see Database/FlaggedItems.swift).
+        Migration(version: 8, name: "flagged categories and taxonomy additions") { c, _ in
+            try FlaggedSchema.apply(c)
+        },
     ]
 
     static var latestSchemaVersion: Int { migrations.last?.version ?? 0 }

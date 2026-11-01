@@ -26,6 +26,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Text,
+    func,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -81,12 +82,40 @@ class ItemDictionary(Base):
     aliases: Mapped[list[Any]] = mapped_column(JSON, default=list)
     is_manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    # No good category in the taxonomy: the category is the fallback Other > Miscellaneous >
+    # General until a client resolves it (migration 0002). The suggestions say what is missing.
+    category_flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("0"))
+    suggested_category: Mapped[str | None] = mapped_column(String(80))
+    suggested_parent: Mapped[str | None] = mapped_column(String(80))
     times_seen: Mapped[int] = mapped_column(Integer, default=1)  # server-owned
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     last_seen_at: Mapped[datetime | None] = mapped_column()  # server-owned
     updated_at: Mapped[datetime] = mapped_column(default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column()
     server_seq: Mapped[int | None] = mapped_column(Integer, index=True)
+
+
+class TaxonomyAddition(Base):
+    """A category path added to the bundled taxonomy by a client (append-only, never deleted).
+    The merged taxonomy is base + these rows (receipts/extraction/taxonomy.py). Not part of the
+    change sequence: pull sends all of them every time."""
+
+    __tablename__ = "taxonomy_additions"
+    __table_args__ = (
+        Index(
+            "uq_taxonomy_additions_path",
+            func.lower(text("category")),
+            func.lower(text("subcategory")),
+            func.lower(text("item_group")),
+            unique=True,
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    category: Mapped[str] = mapped_column(String(80))
+    subcategory: Mapped[str] = mapped_column(String(80))
+    item_group: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    device_id: Mapped[str | None] = mapped_column(String(100))
 
 
 class Receipt(Base):

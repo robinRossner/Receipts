@@ -34,6 +34,13 @@ struct WireDictionaryEntry: Codable, Equatable, Sendable {
     var lastSeenAt: String?
     var updatedAt: String
     var deletedAt: String?
+    /// "No good category" flag and the suggestion for the missing category (docs/api/receipts.md, "Flagged categories").
+    /// Optional on the wire both ways: an older server omits them (nil = unknown, the local value is kept) and an older
+    /// client never sends them (the server keeps its value unless the category changed). `suggestedParent` is
+    /// "Category" or "Category > Subcategory".
+    var categoryFlagged: Bool?
+    var suggestedCategory: String?
+    var suggestedParent: String?
 
     /// What a push may carry: the server ignores the rest, and omitting it keeps the request small.
     func forPush() -> WireDictionaryEntry {
@@ -111,6 +118,18 @@ struct WireLineItem: Codable, Equatable, Sendable {
     }
 }
 
+/// A user-added category path (taxonomy on top of the bundled one). Append-only; identity = the three names ignoring case.
+struct WireTaxonomyAddition: Codable, Equatable, Sendable {
+    var category: String
+    var subcategory: String
+    var itemGroup: String
+    var createdAt: String?
+
+    var path: Taxonomy.Path { Taxonomy.Path(category, subcategory, itemGroup) }
+    /// How the server names it in push results: "A > B > C".
+    var label: String { path.label }
+}
+
 // MARK: - Push / pull
 
 struct PushRequest: Codable, Sendable {
@@ -118,12 +137,14 @@ struct PushRequest: Codable, Sendable {
     var dictionary: [WireDictionaryEntry] = []
     var receipts: [WireReceipt] = []
     var lineItems: [WireLineItem] = []
+    /// nil (key omitted) unless there are new categories; servers before this feature ignore the key.
+    var taxonomyAdditions: [WireTaxonomyAddition]? = nil
 
-    var isEmpty: Bool { dictionary.isEmpty && receipts.isEmpty && lineItems.isEmpty }
+    var isEmpty: Bool { dictionary.isEmpty && receipts.isEmpty && lineItems.isEmpty && (taxonomyAdditions ?? []).isEmpty }
 }
 
 struct PushResult: Codable, Equatable, Sendable {
-    enum Entity: String, Codable, Sendable { case dictionary, receipt, lineItem = "line_item" }
+    enum Entity: String, Codable, Sendable { case dictionary, receipt, lineItem = "line_item", taxonomyAddition = "taxonomy_addition" }
     enum Status: String, Codable, Sendable { case applied, stale, rejected }
     var entity: Entity
     var id: String?
@@ -144,6 +165,8 @@ struct PullResponse: Codable, Sendable {
     var dictionary: [WireDictionaryEntry]
     var receipts: [WireReceipt]
     var lineItems: [WireLineItem]
+    /// All additions the server has (every page repeats the list); nil from a server without the feature.
+    var taxonomyAdditions: [WireTaxonomyAddition]? = nil
 }
 
 // MARK: - Upload, archive, status

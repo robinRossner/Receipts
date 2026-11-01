@@ -1,4 +1,4 @@
-"""The Alembic setup of receipts.db (head 0001) and the change-sequence triggers."""
+"""The Alembic setup of receipts.db (head 0002) and the change-sequence triggers."""
 
 from __future__ import annotations
 
@@ -18,9 +18,11 @@ def _tables(path: Path) -> set[str]:
         return {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
 
-def test_single_head_is_0001():
-    # revision ids and the chain must match the live database (head 0001)
-    assert ScriptDirectory.from_config(alembic_config("sqlite://")).get_heads() == ["0001"]
+def test_single_head_is_0002():
+    # revision ids and the chain must match the live database (0001 is deployed, 0002 follows)
+    scripts = ScriptDirectory.from_config(alembic_config("sqlite://"))
+    assert scripts.get_heads() == ["0002"]
+    assert scripts.get_revision("0002").down_revision == "0001"
 
 
 def test_fresh_database_migrates_to_head(tmp_path):
@@ -30,7 +32,7 @@ def test_fresh_database_migrates_to_head(tmp_path):
         receipts_db
     )
     with sqlite3.connect(receipts_db) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0001",)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("0002",)
 
 
 def test_receipts_migration_is_reversible(tmp_path):

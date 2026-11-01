@@ -354,12 +354,45 @@ final class E2ETests: XCTestCase {
         let unsentEnd = try await app.store.unsentChangeCount()
         XCTAssertEqual(unsentEnd, 0)
 
+        // ---- Phase D: a flagged category and its resolution travel through the real server
+        let taxonomy = Taxonomy.load()
+        let fallbackNumber = taxonomy.numberedPrompt().indexMap.first { $0.value == ("Other", "Miscellaneous", "General") }!.key
+        let llm = ScriptedClassifier([ScriptedClassifier.answer([(fallbackNumber, true, "Pet Food", "Household > Pets")])])
+        let flaggedEntry = try await ItemCategorizer.resolveItems(db: app.db, rawNames: ["Pedigree Hundefutter"], taxonomy: taxonomy, storeName: nil,
+                                                                   logURL: root.appendingPathComponent("class.jsonl"), provider: llm).entries[0]
+        let flagRun = await app.engine.syncNow()
+        XCTAssertTrue(flagRun.succeeded, "\(flagRun.errors)")
+        let flagPull = try await api.pull(since: nil, limit: 5000)
+        let remoteFlag = flagPull.dictionary.first { $0.canonicalName == "pedigree hundefutter" }
+        XCTAssertEqual(remoteFlag?.categoryFlagged, true, "the flag reached the real server")
+        XCTAssertEqual(remoteFlag?.suggestedCategory, "Pet Food"); XCTAssertEqual(remoteFlag?.suggestedParent, "Household > Pets")
+        XCTAssertEqual(remoteFlag?.category, "Other")
+        let pets = Taxonomy.Path("Household", "Pets", "Pet Food")
+        let addedPath = try await FlaggedItems.addPath(db: app.db, pets)
+        let resolvedCount = try await FlaggedItems.resolve(db: app.db, dictionaryIds: [flaggedEntry.id], to: pets)
+        XCTAssertTrue(addedPath); XCTAssertEqual(resolvedCount, 1)
+        let resolveRun = await app.engine.syncNow()
+        XCTAssertTrue(resolveRun.succeeded, "\(resolveRun.errors)")
+        XCTAssertTrue(resolveRun.push.rejected.isEmpty, "\(resolveRun.push.rejected)")
+        let resolvedPull = try await api.pull(since: nil, limit: 5000)
+        let remoteResolved = resolvedPull.dictionary.first { $0.canonicalName == "pedigree hundefutter" }
+        XCTAssertEqual(remoteResolved?.categoryFlagged, false)
+        XCTAssertNil(remoteResolved?.suggestedCategory)
+        XCTAssertEqual(remoteResolved?.itemGroup, "Pet Food")
+        XCTAssertEqual(resolvedPull.taxonomyAdditions?.map(\.path), [pets], "the new category is part of the server's taxonomy")
+        let unsentD = try await app.store.unsentChangeCount()
+        XCTAssertEqual(unsentD, 0)
+
         // a second Mac (empty database, same server) receives everything
         let second = try makeApp(api: api, appDir: root.appendingPathComponent("second-mac"))
         let secondRun = await second.engine.syncNow()
         XCTAssertTrue(secondRun.succeeded, "\(secondRun.errors)")
         let secondReceipts = try await second.db.scalarInt("SELECT COUNT(*) FROM receipts")
         XCTAssertEqual(secondReceipts, 6, "3 migrated + 3 uploaded")
+        let secondPets = try await second.db.queryOne("SELECT category_flagged, item_group FROM item_dictionary WHERE canonical_name = 'pedigree hundefutter'")
+        XCTAssertEqual(secondPets?.int(0), 0); XCTAssertEqual(secondPets?.string(1), "Pet Food")
+        let secondAdds = try await FlaggedItems.additions(db: second.db)
+        XCTAssertEqual(secondAdds, [pets], "the added category reached the second Mac")
 
         // nothing outside the temp dirs was touched
         // (backend/var does not exist in a fresh checkout: then there is nothing it could have touched)

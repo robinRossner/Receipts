@@ -56,6 +56,12 @@ class DictionaryIn(_Record):
     aliases: list[str] = Field(default_factory=list, max_length=200)
     is_manual_override: bool = False
     needs_review: bool = False
+    # Flag fields: unlike the rest of the record they are applied only when the pushed object has
+    # the key (`model_fields_set`), so a client that predates them cannot wipe a flag by
+    # re-pushing the entry (push.py `_dictionary`). null counts as absent for the bool.
+    category_flagged: bool | None = None
+    suggested_category: str | None = None
+    suggested_parent: str | None = None
 
 
 class ReceiptIn(_Record):
@@ -91,10 +97,12 @@ class PushRequest(BaseModel):
     dictionary: list[dict[str, Any]] = []
     receipts: list[dict[str, Any]] = []
     line_items: list[dict[str, Any]] = []
+    # extra category paths added by a client; absent for clients that predate them
+    taxonomy_additions: list[dict[str, Any]] = []
 
 
 class PushResult(BaseModel):
-    entity: Literal["dictionary", "receipt", "line_item"]
+    entity: Literal["dictionary", "receipt", "line_item", "taxonomy_addition"]
     id: str | None
     status: Literal["applied", "stale", "rejected"]
     reason: str | None = None

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.db import iso_z
-from receipts.db.models import ItemDictionary, LineItem, Receipt
+from receipts.db.models import ItemDictionary, LineItem, Receipt, TaxonomyAddition
 
 
 def receipt_out(r: Receipt) -> dict[str, Any]:
@@ -68,9 +68,21 @@ def dictionary_out(d: ItemDictionary) -> dict[str, Any]:
         "aliases": list(d.aliases or []),
         "is_manual_override": bool(d.is_manual_override),
         "needs_review": bool(d.needs_review),
+        "category_flagged": bool(d.category_flagged),
+        "suggested_category": d.suggested_category,
+        "suggested_parent": d.suggested_parent,
         "times_seen": d.times_seen,
         "created_at": iso_z(d.created_at),
         "last_seen_at": iso_z(d.last_seen_at),
         "updated_at": iso_z(d.updated_at),
         "deleted_at": iso_z(d.deleted_at),
+    }
+
+
+def taxonomy_addition_out(a: TaxonomyAddition) -> dict[str, Any]:
+    return {
+        "category": a.category,
+        "subcategory": a.subcategory,
+        "item_group": a.item_group,
+        "created_at": iso_z(a.created_at),
     }

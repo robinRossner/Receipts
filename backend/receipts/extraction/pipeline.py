@@ -30,7 +30,7 @@ from receipts.extraction.prompts import (
     EXTRACTION_PROMPT,
     extraction_schema,
 )
-from receipts.extraction.taxonomy import Taxonomy
+from receipts.extraction.taxonomy import Taxonomy, load_additions
 from receipts.extraction.validate import (
     ExtractedReceipt,
     InvalidExtraction,
@@ -147,8 +147,10 @@ def run_extraction(
     # Dictionary entries are a shared cache: committed on their own, so entries created for a
     # receipt whose result is then not applied are harmless.
     with session_factory() as db:
+        # client-added categories are read per extraction, so they are choosable at once
+        merged = taxonomy.with_additions(load_additions(db))
         entries, classification_providers = resolve_items(
-            db, item_names, taxonomy, extracted.store, provider
+            db, item_names, merged, extracted.store, provider
         )
         db.commit()
         entry_ids = [e.id for e in entries]

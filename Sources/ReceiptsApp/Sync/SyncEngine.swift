@@ -30,7 +30,7 @@ struct SyncReport: Sendable {
     var succeeded: Bool { errors.isEmpty }
     /// Something changed locally that views should reload.
     var changedLocalData: Bool {
-        uploaded > 0 || !duplicates.isEmpty || pulled.dictionary + pulled.receipts + pulled.lineItems + pulled.deletedLocally > 0
+        uploaded > 0 || !duplicates.isEmpty || pulled.dictionary + pulled.receipts + pulled.lineItems + pulled.deletedLocally + pulled.taxonomyAdditions > 0
             || !(archive?.archived.isEmpty ?? true) || !(archive?.savedWaiting.isEmpty ?? true)
     }
 }
@@ -163,14 +163,15 @@ actor SyncEngine {
     // MARK: - Push
 
     private func pushAll(_ report: inout SyncReport) async throws {
-        // dictionary, then receipts, then line items: a record may only reference what the server already has
-        for entity in [PushResult.Entity.dictionary, .receipt, .lineItem] {
+        // new category paths, then dictionary, receipts, line items: a record may only reference what the server already has
+        for entity in [PushResult.Entity.taxonomyAddition, .dictionary, .receipt, .lineItem] {
             var rounds = 0
             while rounds < 100 {
                 rounds += 1
                 let batch = try await store.collectPush(entity, limit: config.pushChunk)
                 if batch.isEmpty { break }
-                let request = PushRequest(deviceId: config.deviceId, dictionary: batch.dictionary, receipts: batch.receipts, lineItems: batch.lineItems)
+                let request = PushRequest(deviceId: config.deviceId, dictionary: batch.dictionary, receipts: batch.receipts, lineItems: batch.lineItems,
+                                          taxonomyAdditions: batch.taxonomyAdditions.isEmpty ? nil : batch.taxonomyAdditions)
                 let response = try await api.push(request)
                 let summary = try await store.applyPushResults(batch: batch, response: response)
                 report.push.applied += summary.applied
@@ -194,6 +195,7 @@ actor SyncEngine {
         var dictionary: [String: WireDictionaryEntry] = [:]
         var receipts: [String: WireReceipt] = [:]
         var items: [String: WireLineItem] = [:]
+        var additions: [WireTaxonomyAddition] = []
         var pages = 0
         while true {
             pages += 1
@@ -202,18 +204,19 @@ actor SyncEngine {
                 page = try await api.pull(since: cursor, limit: config.pageLimit)
             } catch let error as ReceiptsAPIError where error.code == "bad_cursor" && !restarted {
                 restarted = true; cursor = nil
-                dictionary = [:]; receipts = [:]; items = [:]
+                dictionary = [:]; receipts = [:]; items = [:]; additions = []
                 continue
             }
             // Later versions of a record supersede earlier ones; everything is applied together below.
             for d in page.dictionary { dictionary[d.id] = d }
             for r in page.receipts { receipts[r.id] = r }
             for l in page.lineItems { items[l.id] = l }
+            if let a = page.taxonomyAdditions { additions = a }   // every page carries the full list
             cursor = page.cursor
             if !page.hasMore || pages >= SyncConfig.maxPages { break }
         }
         // Applied first, cursor persisted second: a crash in between just repeats the pull.
-        report.pulled = try await store.applyPull(dictionary: Array(dictionary.values), receipts: Array(receipts.values), lineItems: Array(items.values))
+        report.pulled = try await store.applyPull(dictionary: Array(dictionary.values), receipts: Array(receipts.values), lineItems: Array(items.values), taxonomyAdditions: additions)
         if let cursor { try await store.setMeta(config.cursorKey, cursor) }
         needsFullPull = false
     }

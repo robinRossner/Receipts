@@ -147,6 +147,9 @@ Pfand price correction. `position` orders the items of a receipt (ascending, tie
   "aliases": ["bio eier 10er"],
   "is_manual_override": true,
   "needs_review": false,
+  "category_flagged": false,
+  "suggested_category": null,
+  "suggested_parent": null,
   "times_seen": 1,
   "created_at": "2026-10-31T12:21:21.789Z",
   "last_seen_at": "2026-10-31T12:21:21.789Z",
@@ -162,6 +165,14 @@ the category: extraction and re-categorisation never change it. `times_seen`, `l
 server-owned counters; `aliases` is only ever added to (a push is unioned into the stored list).
 Merging two entries (as the Mac dictionary editor does) = push the affected line items with the new
 `item_dictionary_id` and a tombstone for the merged-away entry.
+
+**Flag fields** (additive; see [Flagged categories](#flagged-categories)): `category_flagged`
+(default `false`) = the extraction found no good category in the taxonomy, so the category is the
+fallback `Other > Miscellaneous > General` until a client resolves it; `suggested_category` (short
+leaf name, e.g. `"Pet Food"`) and `suggested_parent` (`"Category"` or `"Category > Subcategory"`)
+say what is missing. Both suggestions are `null` unless `category_flagged` is `true`. The resulting
+taxonomy path is (parent, leaf) for a two-part parent, else (category, leaf, `"General"`). A
+flagged entry also has `needs_review: true`, so UIs that only know `needs_review` mark it too.
 
 ## Photo upload
 
@@ -304,7 +315,9 @@ answer is then only kept server side for reference. Details:
   "dictionary": [ { "id": "0625a3cf-...", "canonical_name": "bio eier 10er", "display_name_de": "Bio Eier 10er",
                     "translation_en": "organic eggs", "category": "Food", "subcategory": "Dairy & Eggs",
                     "item_group": "Eggs", "aliases": ["bio eier 10er"], "is_manual_override": true,
-                    "needs_review": false, "updated_at": "2026-10-31T12:30:00Z" } ],
+                    "needs_review": false, "category_flagged": false, "updated_at": "2026-10-31T12:30:00Z" } ],
+  "taxonomy_additions": [ { "category": "Household", "subcategory": "Pets", "item_group": "Pet Food",
+                            "created_at": "2026-10-31T12:29:00Z" } ],
   "receipts": [ { "id": "3b241101-e2bb-4255-8caf-4136c566a962", "store": "Edeka", "date": "2026-03-01",
                   "time": "09:12", "total": 5.73, "computed_sum": 5.73, "needs_review": false,
                   "review_reasons": [], "reviewed_at": "2026-10-31T12:30:05Z",
@@ -316,12 +329,15 @@ answer is then only kept server side for reference. Details:
 }
 ```
 
-Response (one entry per record, in request order dictionary, receipts, line items):
+Response (one entry per record, in request order taxonomy additions, dictionary, receipts, line
+items; `taxonomy_additions` is optional and absent for older clients, which then get exactly the
+results they always got):
 
 ```json
 {
   "server_time": "2026-10-31T12:21:39.102Z",
   "results": [
+    {"entity": "taxonomy_addition", "id": "Household > Pets > Pet Food", "status": "applied", "reason": null},
     {"entity": "dictionary", "id": "184bd480-...", "status": "applied", "reason": null},
     {"entity": "receipt", "id": "3b241101-e2bb-4255-8caf-4136c566a962", "status": "applied", "reason": null},
     {"entity": "line_item", "id": "3e8556b8-...", "status": "applied", "reason": null},
@@ -342,6 +358,22 @@ Rules:
   Unknown fields, and server-owned fields (`photo_*`, `archived_at`, `extraction_*`, `times_seen`,
   ...), are ignored. A pushed `deleted_at` is a tombstone; a newer record with `deleted_at: null`
   undeletes.
+- **Flag fields of a dictionary entry follow a different rule: each of `category_flagged`,
+  `suggested_category`, `suggested_parent` is applied only if the key is present in the pushed
+  object; absent keeps the stored value** (clients that predate them re-push entries without them
+  and must not wipe a flag). If the pushed `category` / `subcategory` / `item_group` differs from
+  the stored triple and `category_flagged` is absent, the flag and both suggestions are cleared
+  (the user chose a category = resolution). Afterwards: `category_flagged` false (or `null`
+  counts as absent) means both suggestions are stored as `null`; suggestions are trimmed and cut
+  to 80 characters. Last-write-wins by `updated_at` is unchanged.
+- **Taxonomy additions** (`taxonomy_additions`, optional, append-only, no deletes) are applied
+  first, so a dictionary entry of the same request may use the new path. One result per addition
+  (`entity: "taxonomy_addition"`, `id` = `"Category > Subcategory > Group"`): `applied` (new);
+  `stale` (the path already exists in the bundled taxonomy or in the additions, compared
+  case-insensitively; also what re-pushing an addition gives); `rejected` (a part is missing,
+  empty, longer than 60 characters, contains `>` or a control character, or 300 additions are
+  stored already). `created_at` (optional, ISO UTC) is kept as the ordering key, default: server
+  time.
 - **A bad record is `rejected` alone** (the rest of the request is applied): invalid ids/dates
   (`"invalid: date: ..."`), unknown `receipt_id` or `item_dictionary_id` (push dictionary entries
   and receipts first or in the same request; the server applies dictionary, then receipts, then
@@ -367,7 +399,10 @@ Rules:
   so nothing is missed because of clock differences, and a record that changes again later comes
   again. Records may repeat across pulls; applying a record twice is harmless.
 - Each response contains `dictionary`, `receipts` and `line_items` (full records, tombstones
-  included), `server_time` and `taxonomy_version` (refetch `/taxonomy` when it changed).
+  included), `server_time` and `taxonomy_version` (refetch `/taxonomy` when it changed), and
+  `taxonomy_additions`: **all** client-added category paths, in every response, ordered by
+  `created_at`, `id` (a short list; no cursor, not part of the change sequence). Replace your local
+  copy of the additions with it.
 
 ```json
 {
@@ -375,6 +410,8 @@ Rules:
   "has_more": false,
   "server_time": "2026-10-31T12:21:39.119Z",
   "taxonomy_version": "1b014dce5b21c26a",
+  "taxonomy_additions": [ {"category": "Household", "subcategory": "Pets", "item_group": "Pet Food",
+                           "created_at": "2026-10-31T12:29:00.000Z"} ],
   "dictionary": [ {"...": "dictionary entries"} ],
   "receipts": [ {"...": "receipts"} ],
   "line_items": [ {"...": "line items"} ]
@@ -488,6 +525,7 @@ the original upload is answered `200` without storing the photo again.
   "archive_overdue": false,
   "disk_warning": false,
   "queue": {"queued": 0, "processing": 0, "done": 1, "failed": 0},
+  "flagged_items": 0,
   "llm": {"provider": "none", "requested_provider": "auto", "credential_configured": false,
           "billing": null, "model": "claude-haiku-5-5"}
 }
@@ -501,7 +539,8 @@ the original upload is answered `200` without storing the photo again.
 - `disk_warning`: the server's free disk is below `disk_warning_free_mb` (default 2048;
   `RECEIPTS_DISK_WARNING_FREE_MB`).
 - Clients should show a banner when either flag is true ("N photos wait on the server, archive them
-  on your laptop"). `queue` counts extraction jobs; `llm.provider` is `none` when no credential is
+  on your laptop"). `flagged_items` = live dictionary entries
+  waiting for a category ([Flagged categories](#flagged-categories)); `queue` counts extraction jobs; `llm.provider` is `none` when no credential is
   configured (receipts then stay `queued`). `llm` never contains a credential.
 - A daily scheduled job (09:00 `Europe/Vienna`, `RECEIPTS_REMINDER_TIME`) sends a reminder when
   `archive_overdue` or `disk_warning` is true, at most once every 3 days
@@ -523,11 +562,34 @@ the original upload is answered `200` without storing the photo again.
   ```
   A dictionary entry's `category` / `subcategory` / `item_group` must be a path of this tree
   (otherwise the push of that entry is `rejected`). Refetch when `taxonomy_version` of a pull
-  changes.
-- `GET /api/v1/receipts/dictionary[?include_deleted=true]`: all entries,
+  changes. The tree is the **merged** taxonomy: the bundled one plus the `taxonomy_additions`
+  (each appended at the end: a group to an existing subcategory, else a new subcategory of an
+  existing category, else a new category). `version` is unchanged while there are no additions
+  and changes with every addition.
+- `GET /api/v1/receipts/dictionary[?include_deleted=true][&flagged=true]`: all entries
+  (`flagged=true`: only live flagged entries, i.e. what still needs a category),
   `{"count": 2, "taxonomy_version": "...", "entries": [...]}`. Normally not needed: entries arrive
   through pull. Stats (Overview charts, exports) stay on the client, computed from the synced
   receipts, line items and dictionary.
+
+## Flagged categories
+
+When the extraction LLM knows what an item is but no category of the (merged) taxonomy is a
+reasonable home, it does not force a poor fit: the dictionary entry is created with
+`category_flagged: true`, the fallback category `Other > Miscellaneous > General`,
+`needs_review: true` and a proposal (`suggested_category`, `suggested_parent`). Unreadable names
+are not flagged (plain fallback, `needs_review`). Flagging is rare, and a proposal that names a
+path that exists is simply assigned. Exact name / alias hits on a flagged entry return it
+unchanged (no new LLM call); look-alike names (fuzzy match) do not inherit it. One resolution fixes
+every receipt that uses the entry.
+
+Find them: `GET /dictionary?flagged=true`, the count in `/status.flagged_items`, or
+`category_flagged` on pulled entries. To **resolve**, push the dictionary entry with the chosen path,
+`is_manual_override: true`, `needs_review: false`, `category_flagged: false` (and a newer
+`updated_at`). Either an existing path from the taxonomy, or, when the path is new, a
+`taxonomy_additions` item for it in the same push request (applied before the entry). There is no
+deletion of additions in this version, and nothing is resolved automatically: an unresolved flag
+stays until a client pushes.
 
 ## Errors
 

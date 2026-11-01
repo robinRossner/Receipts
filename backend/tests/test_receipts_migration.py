@@ -333,3 +333,37 @@ def test_the_mac_database_is_opened_read_only(mac):
     before = mac.db.read_bytes()
     mig.run_migration(mac.db, mac.archive, url(), apply=False)
     assert mac.db.read_bytes() == before
+
+
+# --------------------------------------------------------------------------- flagged categories
+
+
+def _add_flag_columns(path: Path) -> None:
+    db = sqlite3.connect(path)
+    db.executescript(
+        "ALTER TABLE item_dictionary ADD COLUMN category_flagged INTEGER DEFAULT 0;"
+        "ALTER TABLE item_dictionary ADD COLUMN suggested_category TEXT;"
+        "ALTER TABLE item_dictionary ADD COLUMN suggested_parent TEXT;"
+        "UPDATE item_dictionary SET category_flagged = 1, suggested_category = 'Pet Food',"
+        " suggested_parent = 'Household', category = 'Other', subcategory = 'Miscellaneous',"
+        " item_group = 'General' WHERE id = 2;"
+    )
+    db.commit()
+    db.close()
+
+
+def test_the_flag_columns_of_a_newer_mac_database_are_carried_over(mac, rfactory, rdb):
+    _add_flag_columns(mac.db)
+    mig.run_migration(mac.db, mac.archive, url(), apply=True)
+    flagged = rdb.get(ItemDictionary, mig.uid("dictionary", 2))
+    assert flagged.category_flagged is True and flagged.needs_review is True
+    assert (flagged.suggested_category, flagged.suggested_parent) == ("Pet Food", "Household")
+    plain = rdb.get(ItemDictionary, mig.uid("dictionary", 1))
+    assert plain.category_flagged is False and plain.suggested_category is None
+
+
+def test_an_old_mac_database_without_the_flag_columns_still_imports(mac, rfactory, rdb):
+    mig.run_migration(mac.db, mac.archive, url(), apply=True)  # the fixture has no flag columns
+    for entry in rdb.scalars(select(ItemDictionary)):
+        assert entry.category_flagged is False
+        assert (entry.suggested_category, entry.suggested_parent) == (None, None)

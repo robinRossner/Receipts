@@ -118,6 +118,22 @@ enum SyncSchema {
 
     // MARK: - Triggers
 
+    /// Migration 8 added the flagged-category columns to item_dictionary: the edit-tracking trigger lists the columns it
+    /// watches, so it is dropped and created again with them (a change to only those columns is an edit to push).
+    static func recreateDictionaryUpdateTrigger(_ c: SQLConnection) throws {
+        try c.run("DROP TRIGGER IF EXISTS trg_item_dictionary_sync_update")
+        try c.run("""
+            CREATE TRIGGER trg_item_dictionary_sync_update
+            AFTER UPDATE OF canonical_name, display_name_de, translation_en, category, subcategory, item_group,
+                            aliases, is_manual_override, needs_review, category_flagged, suggested_category, suggested_parent
+            ON item_dictionary
+            WHEN NEW.uuid IS NOT NULL AND \(notApplying)
+            BEGIN
+                UPDATE item_dictionary SET updated_at = \(nowExpr), sync_state = 'dirty', sync_error = NULL WHERE id = NEW.id;
+            END
+            """)
+    }
+
     private static func createTriggers(_ c: SQLConnection) throws {
         // Receipts ---------------------------------------------------------------------------
         try c.run("""
