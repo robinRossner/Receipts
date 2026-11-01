@@ -178,6 +178,7 @@ enum ReceiptExtractor {
         validateTotals(&receipt, issues: &issues)
         validateLineMath(receipt, issues: &issues)
         validateQuantities(receipt, issues: &issues)
+        validateSigns(receipt, issues: &issues)
 
         receipt.needsReview = !issues.isEmpty
         receipt.reviewReasons = issues
@@ -248,6 +249,88 @@ enum ReceiptExtractor {
             let qty = item.quantity ?? 1.0
             if qty <= 0 {
                 issues.append("Item #\(i) (\(item.name ?? "nil")) has quantity \(qty) - should be positive")
+            }
+        }
+    }
+
+    // ---- Sign plausibility (shifted price column) ----
+    // Names are folded to ASCII words (lower case, umlauts and accents dropped, ss for the sharp s) and
+    // matched word by word, never as substrings of the whole name. Mirrors validate.py in the backend;
+    // both run the table in backend/tests/test_receipts_sign_checks.py.
+
+    private static let depositReturnPrefixes = [
+        "leergut", "pfandbon", "pfandruck", "pfandrueck", "pfanderstatt", "pfandgutschrift",
+        "pfandzuruck", "pfandzurueck", "pfandeinlos", "ruckpfand", "rueckpfand",
+    ]
+    private static let depositReturnWords: Set<String> = [
+        "zuruck", "zurueck", "ruckgabe", "rueckgabe", "ruckerstattung", "rueckerstattung",
+        "erstattung", "ruckzahlung", "rueckzahlung", "gutschrift", "bon", "einlosung", "einloesung",
+    ]
+    /// Legitimately negative lines: a word starting or ending with one of these.
+    private static let negativeOKStems = [
+        "rabatt", "coupon", "gutschein", "gutschrift", "nachlass", "storno", "bonus",
+        "payback", "ersparnis", "korrektur", "retoure", "umtausch", "erstattung", "abzug",
+        "skonto", "ruckgabe", "rueckgabe", "abschlag", "preissenkung", "cashback",
+    ]
+    /// Only at the start of a word ("Aktionsware" yes, "Reaktion" no).
+    private static let negativeOKPrefixes = ["aktion", "storn", "reduzier", "punkte", "treue"]
+    /// Only at the end of a word ("Preisvorteil" yes, "Vorteilspack" no).
+    private static let negativeOKSuffixes = ["vorteil"]
+    /// Whole words only (abbreviations printed on receipts).
+    private static let negativeOKWords: Set<String> = ["rab", "rabt", "gutsch", "gutschr", "korr"]
+
+    static func nameWords(_ name: String?) -> [String] {
+        let decomposed = (name ?? "").lowercased().decomposedStringWithCanonicalMapping
+        var folded = String.UnicodeScalarView()
+        for scalar in decomposed.unicodeScalars where !(0x0300...0x036F).contains(scalar.value) {
+            folded.append(scalar)
+        }
+        let ascii = String(folded).replacingOccurrences(of: "ß", with: "ss")
+        var words: [String] = []
+        var current = ""
+        for scalar in ascii.unicodeScalars {
+            if (scalar.value >= 97 && scalar.value <= 122) || (scalar.value >= 48 && scalar.value <= 57) {
+                current.unicodeScalars.append(scalar)
+            } else if !current.isEmpty {
+                words.append(current)
+                current = ""
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        return words
+    }
+
+    private static func isPfandWord(_ w: String) -> Bool { w.hasPrefix("pfand") || w.hasSuffix("pfand") }
+
+    static func isDepositReturnName(_ name: String?) -> Bool {
+        let words = nameWords(name)
+        if words.contains(where: { w in depositReturnPrefixes.contains { w.hasPrefix($0) } }) { return true }
+        return words.contains(where: isPfandWord) && words.contains(where: { depositReturnWords.contains($0) })
+    }
+
+    private static func isDepositName(_ name: String?) -> Bool {
+        isDepositReturnName(name) || nameWords(name).contains { isPfandWord($0) || $0.hasPrefix("leergut") }
+    }
+
+    static func isLegitNegativeName(_ name: String?) -> Bool {
+        if isDepositName(name) { return true }
+        for w in nameWords(name) {
+            if negativeOKWords.contains(w) || negativeOKPrefixes.contains(where: { w.hasPrefix($0) }) { return true }
+            if negativeOKSuffixes.contains(where: { w.hasSuffix($0) }) { return true }
+            if negativeOKStems.contains(where: { w.hasPrefix($0) || w.hasSuffix($0) }) { return true }
+        }
+        return false
+    }
+
+    /// A shifted price column keeps the sum right, so check each line's sign against its name.
+    private static func validateSigns(_ receipt: ExtractedReceipt, issues: inout [String]) {
+        for (i, item) in receipt.items.enumerated() {
+            let total = item.totalPrice ?? 0.0
+            let label = item.name ?? item.rawText
+            if total > 0 && isDepositReturnName(label) {
+                issues.append("Item #\(i) (\(item.name ?? "nil")): deposit return has a positive amount \(total) - check whether the price column shifted by a line.")
+            } else if total < 0 && !isLegitNegativeName(label) {
+                issues.append("Item #\(i) (\(item.name ?? "nil")): product has a negative amount \(total) - check whether the price column shifted by a line.")
             }
         }
     }

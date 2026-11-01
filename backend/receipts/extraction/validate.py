@@ -4,6 +4,8 @@ mismatch, per-line math, quantities. The review reasons are the same texts the M
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,6 +20,68 @@ from receipts.extraction.jsonutil import (
 SUM_MISMATCH_TOLERANCE = 0.02
 KNOWN_PFAND_VALUES = (0.08, 0.15, 0.25, 1.50)
 PFAND_AUTOCORRECT_THRESHOLD = 0.10
+
+
+# Sign plausibility (shifted price column). Names are folded to ASCII words (lower case, umlauts and
+# accents dropped, ss for the sharp s) and matched word by word, never as substrings of the whole
+# name. Mirrors ReceiptExtractor.swift; both run the table in tests/test_receipts_sign_checks.py.
+_DEPOSIT_RETURN_PREFIXES = (
+    "leergut", "pfandbon", "pfandruck", "pfandrueck", "pfanderstatt", "pfandgutschrift",
+    "pfandzuruck", "pfandzurueck", "pfandeinlos", "ruckpfand", "rueckpfand",
+)  # fmt: skip
+_DEPOSIT_RETURN_WORDS = (
+    "zuruck", "zurueck", "ruckgabe", "rueckgabe", "ruckerstattung", "rueckerstattung",
+    "erstattung", "ruckzahlung", "rueckzahlung", "gutschrift", "bon", "einlosung", "einloesung",
+)  # fmt: skip
+# Legitimately negative lines: a word starting or ending with one of these.
+_NEGATIVE_OK_STEMS = (
+    "rabatt", "coupon", "gutschein", "gutschrift", "nachlass", "storno", "bonus",
+    "payback", "ersparnis", "korrektur", "retoure", "umtausch", "erstattung", "abzug",
+    "skonto", "ruckgabe", "rueckgabe", "abschlag", "preissenkung", "cashback",
+)  # fmt: skip
+# Only at the start of a word ("Aktionsware" yes, "Reaktion" no).
+_NEGATIVE_OK_PREFIXES = ("aktion", "storn", "reduzier", "punkte", "treue")
+# Only at the end of a word ("Preisvorteil" yes, "Vorteilspack" no).
+_NEGATIVE_OK_SUFFIXES = ("vorteil",)
+# Whole words only (abbreviations printed on receipts).
+_NEGATIVE_OK_WORDS = ("rab", "rabt", "gutsch", "gutschr", "korr")
+
+
+def _name_words(name: str | None) -> list[str]:
+    decomposed = unicodedata.normalize("NFD", (name or "").lower())
+    folded = "".join(c for c in decomposed if not unicodedata.combining(c)).replace("ß", "ss")
+    return [w for w in re.split(r"[^a-z0-9]+", folded) if w]
+
+
+def _is_pfand_word(w: str) -> bool:
+    return w.startswith("pfand") or w.endswith("pfand")
+
+
+def is_deposit_return_name(name: str | None) -> bool:
+    words = _name_words(name)
+    if any(w.startswith(_DEPOSIT_RETURN_PREFIXES) for w in words):
+        return True
+    return any(_is_pfand_word(w) for w in words) and any(w in _DEPOSIT_RETURN_WORDS for w in words)
+
+
+def _is_deposit_name(name: str | None) -> bool:
+    words = _name_words(name)
+    return is_deposit_return_name(name) or any(
+        _is_pfand_word(w) or w.startswith("leergut") for w in words
+    )
+
+
+def is_legit_negative_name(name: str | None) -> bool:
+    if _is_deposit_name(name):
+        return True
+    for w in _name_words(name):
+        if w in _NEGATIVE_OK_WORDS or w.startswith(_NEGATIVE_OK_PREFIXES):
+            return True
+        if w.endswith(_NEGATIVE_OK_SUFFIXES):
+            return True
+        if any(w.startswith(s) or w.endswith(s) for s in _NEGATIVE_OK_STEMS):
+            return True
+    return False
 
 
 class InvalidExtraction(ValueError):
@@ -118,6 +182,7 @@ def validate_receipt(raw: ExtractedReceipt) -> ExtractedReceipt:
     _validate_totals(r, issues)
     _validate_line_math(r, issues)
     _validate_quantities(r, issues)
+    _validate_signs(r, issues)
     r.needs_review = bool(issues)
     r.review_reasons = issues
     return r
@@ -190,4 +255,21 @@ def _validate_quantities(r: ExtractedReceipt, issues: list[str]) -> None:
         if qty <= 0:
             issues.append(
                 f"Item #{i} ({item.name or 'nil'}) has quantity {qty} - should be positive"
+            )
+
+
+def _validate_signs(r: ExtractedReceipt, issues: list[str]) -> None:
+    """A shifted price column keeps the sum right, so check each line's sign against its name."""
+    for i, item in enumerate(r.items):
+        total = item.total_price if item.total_price is not None else 0.0
+        label = item.name or item.raw_text
+        if total > 0 and is_deposit_return_name(label):
+            issues.append(
+                f"Item #{i} ({item.name or 'nil'}): deposit return has a positive amount {total} - "
+                "check whether the price column shifted by a line."
+            )
+        elif total < 0 and not is_legit_negative_name(label):
+            issues.append(
+                f"Item #{i} ({item.name or 'nil'}): product has a negative amount {total} - "
+                "check whether the price column shifted by a line."
             )
