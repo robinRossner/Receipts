@@ -211,6 +211,7 @@ final class FlaggedItemsTests: XCTestCase {
         XCTAssertNil(ItemCategorizer.fallbackNumber(inTaxonomyList: "1. Food > Pantry > Legumes"))
     }
 
+    #if os(macOS)  // anthropicCompatible() belongs to the Mac-only Claude providers
     /// The model writes `identified` before it chooses, in the order the schema lists the properties. The CLI schema is
     /// written in that order, not alphabetically.
     func testSchemaJSONKeepsTheEvaluatedPropertyOrder() {
@@ -226,6 +227,7 @@ final class FlaggedItemsTests: XCTestCase {
         XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(json.utf8)))
         XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(extraction.utf8)))
     }
+    #endif
 
     // MARK: - The dictionary must not cement a poor match
 
