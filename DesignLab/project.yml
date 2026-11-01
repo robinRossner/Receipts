@@ -1,0 +1,101 @@
+# Throwaway design lab. Generate with: cd DesignLab && xcodegen generate
+# DesignLab = all four designs + switcher. Host1/2/3/4 = one design only, so a design agent never compiles the others.
+name: DesignLab
+options:
+  bundleIdPrefix: com.robin.designlab
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  deploymentTarget:
+    iOS: "26.0"
+packages:
+  DesignLabKit:
+    path: .
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+    CODE_SIGNING_ALLOWED: NO
+    ENABLE_PREVIEWS: YES
+targetTemplates:
+  LabApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+targets:
+  DesignLab:
+    templates: [LabApp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.robin.designlab
+        PRODUCT_NAME: DesignLab
+        INFOPLIST_KEY_CFBundleDisplayName: Design Lab
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) LAB_SWITCHER
+    dependencies:
+      - package: DesignLabKit
+        product: LabCore
+      - package: DesignLabKit
+        product: Design1Polish
+      - package: DesignLabKit
+        product: Design2Glass
+      - package: DesignLabKit
+        product: Design3Brutal
+      - package: DesignLabKit
+        product: Design4Store
+  Host1:
+    templates: [LabApp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.robin.designlab.host1
+        PRODUCT_NAME: Host1
+        INFOPLIST_KEY_CFBundleDisplayName: Design 1
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) LAB_HOST1
+    dependencies:
+      - package: DesignLabKit
+        product: LabCore
+      - package: DesignLabKit
+        product: Design1Polish
+  Host2:
+    templates: [LabApp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.robin.designlab.host2
+        PRODUCT_NAME: Host2
+        INFOPLIST_KEY_CFBundleDisplayName: Design 2
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) LAB_HOST2
+    dependencies:
+      - package: DesignLabKit
+        product: LabCore
+      - package: DesignLabKit
+        product: Design2Glass
+  Host3:
+    templates: [LabApp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.robin.designlab.host3
+        PRODUCT_NAME: Host3
+        INFOPLIST_KEY_CFBundleDisplayName: Design 3
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) LAB_HOST3
+    dependencies:
+      - package: DesignLabKit
+        product: LabCore
+      - package: DesignLabKit
+        product: Design3Brutal
+  Host4:
+    templates: [LabApp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.robin.designlab.host4
+        PRODUCT_NAME: Host4
+        INFOPLIST_KEY_CFBundleDisplayName: Design 4
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) LAB_HOST4
+    dependencies:
+      - package: DesignLabKit
+        product: LabCore
+      - package: DesignLabKit
+        product: Design4Store
