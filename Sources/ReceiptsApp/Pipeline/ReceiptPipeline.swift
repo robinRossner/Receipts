@@ -30,31 +30,65 @@ enum ProcessStage: Sendable {
 /// Ports receipt_pipeline.py: orchestrates scan -> extract -> categorize -> store -> organize
 /// for one receipt photo.
 enum ReceiptPipeline {
-    // ---- Store name canonicalization, copied verbatim from receipt_pipeline.py ----
-
-    static let storeNameMap: [String: String] = [
-        "edeka": "Edeka",
-        "aldi sud": "Aldi Süd",
-        "aldi süd": "Aldi Süd",
-        "aldi nord": "Aldi Nord",
-        "dm-drogerie markt": "dm",
-        "dm": "dm",
-        "rewe": "Rewe",
-        "lidl": "Lidl",
-        "penny-markt gmbh": "Penny",
-        "penny": "Penny",
-        "rossmann": "Rossmann",
-        "kaufland": "Kaufland",
-    ]
+    // ---- Store name canonicalization ----
+    //
+    // The model returns the printed name ("EDEKA Musterstadt", "REWE Markt GmbH", "Penny-Markt"), so a chain
+    // is recognised by whole words, never by substring, whatever the branch prefix or suffix. Mirrored in
+    // backend/receipts/extraction/pipeline.py (canonicalize_store); both are run against the same table of cases.
+    //
+    // The name is lower-cased, diacritics are folded (ü -> u) and every run of characters other than a-z / 0-9
+    // becomes a word break. Then, reading the words left to right, the first rule that fits wins:
+    //   edeka, rewe, lidl, kaufland, rossmann      as a word anywhere ("Getränke Edeka Musterstadt")
+    //   aldi + sud|sued / nord                     as two words anywhere; a bare "Aldi" stays as printed
+    //   penny                                      only as the first word (a name like "Cafe Penny Lane" is not the chain)
+    //   dm                                         only when the name is "dm" or starts "dm drogerie" (two letters match too much)
 
     /// The chain names the extraction can produce (for store-name suggestions in the UI).
-    static var canonicalStoreNames: [String] { Array(Set(storeNameMap.values)).sorted() }
+    static let canonicalStoreNames: [String] = ["Aldi Nord", "Aldi Süd", "Edeka", "Kaufland", "Lidl", "Penny", "Rewe", "Rossmann", "dm"]
 
     static func canonicalizeStore(_ raw: String?) -> String {
         guard let raw else { return "Unknown" }
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return "Unknown" }
-        return storeNameMap[trimmed.lowercased()] ?? trimmed
+        return chain(in: trimmed) ?? trimmed
+    }
+
+    private static let anywhereChains: [String: String] = [
+        "edeka": "Edeka", "rewe": "Rewe", "lidl": "Lidl", "kaufland": "Kaufland", "rossmann": "Rossmann",
+    ]
+
+    /// The words of a printed store name: lower-case ASCII letters and digits.
+    static func storeWords(_ raw: String) -> [String] {
+        let folded = raw.lowercased().folding(options: .diacriticInsensitive, locale: Locale(identifier: "en_US_POSIX"))
+        var words: [String] = []
+        var current = ""
+        for scalar in folded.unicodeScalars {
+            if (scalar.value >= 97 && scalar.value <= 122) || (scalar.value >= 48 && scalar.value <= 57) {
+                current.unicodeScalars.append(scalar)
+            } else if !current.isEmpty {
+                words.append(current)
+                current = ""
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        return words
+    }
+
+    private static func chain(in raw: String) -> String? {
+        let words = storeWords(raw)
+        if words == ["dm"] || (words.count >= 2 && words[0] == "dm" && words[1] == "drogerie") { return "dm" }
+        if words.first == "penny" { return "Penny" }
+        for (i, word) in words.enumerated() {
+            if let name = anywhereChains[word] { return name }
+            if word == "aldi", i + 1 < words.count {
+                switch words[i + 1] {
+                case "sud", "sued": return "Aldi Süd"
+                case "nord": return "Aldi Nord"
+                default: break
+                }
+            }
+        }
+        return nil
     }
 
     static func slugify(_ text: String?) -> String {

@@ -71,3 +71,16 @@ Contract: `docs/api/receipts.md`; runbook: `deploy/README.md`.
 - **The Mac confirms like the iPhone.** `Confirm all` and `Looks good` leave receipts still being read or failed alone (with
   sync on, a confirmation is an applied push, which keeps the extraction out for good; see the API doc), so the unsafe
   `confirmAllWithoutFlags` is gone.
+
+## Parsing fixes (2026-11-01)
+
+- **The model sees the receipt at 1568 px on the long edge** (Mac/iOS `DocumentScanner.modelMaxDimension`), not 1024:
+  a tall receipt reached the model at about 241x1024 and was misread, at 1568 px the same one read 18/18 exact.
+  Only the picture sent to the model is scaled; stored and uploaded photos are untouched (phones upload up to
+  2500 px). The quality steps down from 0.95 if the JPEG would pass 4.5 MB (the API limit is 5 MB). The server
+  never rescales a stored photo, and the API works at 1568 px itself.
+- **Store names are matched by whole words,** not by exact string, in Swift (`ReceiptPipeline.canonicalizeStore`)
+  and the server (`canonicalize_store`), run against the same table of cases: "EDEKA Musterstadt" -> Edeka,
+  "REWE Markt GmbH" -> Rewe, "Penny-Markt" -> Penny, "ALDI SÜD" / "ALDI SUED" -> Aldi Süd. Penny only as the first
+  word and dm only as "dm" / "dm drogerie ..." (too short or too common elsewhere); a bare "Aldi" stays as printed.
+  Stored receipts are not rewritten. Android keeps its exact-match table until it is ported.

@@ -15,6 +15,8 @@ that matter on a server:
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass
 
 from sqlalchemy import func, select, update
@@ -42,21 +44,59 @@ from receipts.settings import ReceiptsSettings
 
 log = logging.getLogger(__name__)
 
-# Chain names the extraction can produce (ReceiptPipeline.storeNameMap, copied verbatim).
-STORE_NAME_MAP = {
+# Store name canonicalisation. The model returns the printed name ("EDEKA Musterstadt", "REWE Markt
+# GmbH", "Penny-Markt"), so a chain is recognised by whole words, never by substring, whatever the
+# branch prefix or suffix. Mirrors ReceiptPipeline.canonicalizeStore in Swift; both run the same
+# table of cases in their tests.
+#
+# The name is lower-cased, diacritics are folded (ü -> u) and every run of characters other than
+# a-z / 0-9 becomes a word break. Rules, in order:
+#   dm          only when the name is "dm" or starts "dm drogerie" (two letters match too much)
+#   penny       only as the first word ("Cafe Penny Lane" is not the chain)
+#   edeka, rewe, lidl, kaufland, rossmann   as a word anywhere ("Getränke Edeka Musterstadt")
+#   aldi + sud|sued / nord                  as two words anywhere; a bare "Aldi" stays as printed
+CANONICAL_STORE_NAMES = [
+    "Aldi Nord",
+    "Aldi Süd",
+    "Edeka",
+    "Kaufland",
+    "Lidl",
+    "Penny",
+    "Rewe",
+    "Rossmann",
+    "dm",
+]
+_ANYWHERE_CHAINS = {
     "edeka": "Edeka",
-    "aldi sud": "Aldi Süd",
-    "aldi süd": "Aldi Süd",
-    "aldi nord": "Aldi Nord",
-    "dm-drogerie markt": "dm",
-    "dm": "dm",
     "rewe": "Rewe",
     "lidl": "Lidl",
-    "penny-markt gmbh": "Penny",
-    "penny": "Penny",
-    "rossmann": "Rossmann",
     "kaufland": "Kaufland",
+    "rossmann": "Rossmann",
 }
+_NON_WORD = re.compile(r"[^a-z0-9]+")
+
+
+def store_words(raw: str) -> list[str]:
+    lowered = unicodedata.normalize("NFKD", raw.lower())
+    folded = "".join(c for c in lowered if not unicodedata.combining(c))
+    return [w for w in _NON_WORD.split(folded) if w]
+
+
+def _chain_in(raw: str) -> str | None:
+    words = store_words(raw)
+    if words == ["dm"] or words[:2] == ["dm", "drogerie"]:
+        return "dm"
+    if words[:1] == ["penny"]:
+        return "Penny"
+    for i, word in enumerate(words):
+        if word in _ANYWHERE_CHAINS:
+            return _ANYWHERE_CHAINS[word]
+        if word == "aldi" and i + 1 < len(words):
+            if words[i + 1] in ("sud", "sued"):
+                return "Aldi Süd"
+            if words[i + 1] == "nord":
+                return "Aldi Nord"
+    return None
 
 
 def canonicalize_store(raw: str | None) -> str:
@@ -65,7 +105,7 @@ def canonicalize_store(raw: str | None) -> str:
     trimmed = raw.strip(" \t")
     if not trimmed:
         return "Unknown"
-    return STORE_NAME_MAP.get(trimmed.lower(), trimmed)
+    return _chain_in(trimmed) or trimmed
 
 
 @dataclass(frozen=True)
@@ -140,6 +180,8 @@ def run_extraction(
     except FileNotFoundError:
         raise LLMError("photo_missing", "The photo file is missing on the server.") from None
 
+    # The photo goes to the model as stored (the phones upload up to 2500 px on the long edge, under
+    # 5 MB); the server never shrinks it, and the API works at 1568 px itself, so nothing is lost.
     extracted = extract_and_validate(provider, image, media_type)
     extracted.store = canonicalize_store(extracted.store)
     item_names = [i.name or i.raw_text or "" for i in extracted.items]

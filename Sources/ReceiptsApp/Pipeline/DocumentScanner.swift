@@ -88,9 +88,27 @@ enum DocumentScanner {
 
     private static let sharedContext = CIContext()
 
-    /// Downscales to a max dimension and JPEG-encodes - mirrors call_ollama()'s resize-then-
-    /// encode step in scan_and_parse_receipt.py (same 1024px cap, same 95% quality).
-    static func jpegData(from image: CIImage, maxDimension: CGFloat = 1024, quality: CGFloat = 0.95) -> Data? {
+    /// Long edge of the picture sent to the vision model. 1024 px squeezed a tall receipt to about 241x1024 and the
+    /// model misread it; at 1568 px (the size the Claude API itself works at) the same receipt read 18/18 exact.
+    static let modelMaxDimension: CGFloat = 1568
+    /// JPEG qualities tried in turn for the model picture, and the byte ceiling (the API rejects images over 5 MB).
+    static let modelQualities: [CGFloat] = [0.95, 0.85, 0.7, 0.5]
+    static let modelMaxBytes = 4_500_000
+
+    /// The JPEG the vision model gets: long edge `modelMaxDimension`, best quality that stays under `modelMaxBytes`.
+    /// Only what is sent is shrunk; the stored photo is untouched.
+    static func modelJPEG(from image: CIImage, maxBytes: Int = modelMaxBytes) -> Data? {
+        var last: Data?
+        for quality in modelQualities {
+            guard let data = jpegData(from: image, maxDimension: modelMaxDimension, quality: quality) else { return nil }
+            if data.count <= maxBytes { return data }
+            last = data
+        }
+        return last
+    }
+
+    /// Downscales to a max dimension (default `modelMaxDimension`) and JPEG-encodes it, 95% quality by default.
+    static func jpegData(from image: CIImage, maxDimension: CGFloat = modelMaxDimension, quality: CGFloat = 0.95) -> Data? {
         var working = image
         let extent = working.extent
         let largestSide = max(extent.width, extent.height)

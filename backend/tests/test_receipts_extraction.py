@@ -103,6 +103,13 @@ def test_keyword_rules_decide_without_the_llm(rclient, rfactory, rdb):
     assert d.item_group == "Nuts, Seeds & Dried Fruit"
 
 
+def test_a_printed_branch_name_is_stored_as_the_chain(rclient, rdb, rfactory):
+    upload(rclient)
+    provider = FakeProvider([receipt_json(store="EDEKA Musterstadt", date="2026-03-01")])
+    assert worker.run_next(rfactory, provider) is True
+    assert reload(rdb).store == "Edeka"
+
+
 def test_repeated_names_share_one_dictionary_entry(rclient, rfactory, rdb):
     upload(rclient)
     provider = FakeProvider(

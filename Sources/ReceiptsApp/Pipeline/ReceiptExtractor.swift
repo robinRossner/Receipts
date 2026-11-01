@@ -150,7 +150,7 @@ enum ReceiptExtractor {
     /// Calls the vision model, retrying once on invalid JSON - same policy as
     /// process_receipt() in receipt_pipeline.py.
     static func extractAndValidate(image: CIImage, provider: any ReceiptExtractionProvider) async throws -> ExtractedReceipt {
-        guard let jpeg = DocumentScanner.jpegData(from: image) else {
+        guard let jpeg = DocumentScanner.modelJPEG(from: image) else {
             throw ExtractionError.imageEncodingFailed
         }
         let first = try await callVisionModel(jpeg: jpeg, provider: provider)
