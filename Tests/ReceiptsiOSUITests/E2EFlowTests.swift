@@ -122,6 +122,10 @@ final class E2EFlowTests: XCTestCase {
         let row = waitForRow("Edeka")
         shot("06-list-extracted")
         row.tap()
+        // Items are compact until tapped.
+        let item = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Bio Eier'")).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 15))
+        item.tap()
         let price = app.textFields["priceField"].firstMatch
         XCTAssertTrue(price.waitForExistence(timeout: 15))
         shot("07-detail-items")

@@ -32,19 +32,13 @@ struct OverviewView: View {
     @State private var groupDetails: [String: ItemGroupDetail] = [:]
     @State private var loadingGroups: Set<String> = []
 
-    #if os(macOS)
     private let contentPadding: CGFloat = 40
-    #else
-    private let contentPadding: CGFloat = 16
-    #endif
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 header
-                Text("Total: \(fmtMoney(summary?.total))")
-                    .font(AppTheme.mono(22))
-                    .foregroundColor(AppTheme.ink)
+                totalBlock
                 SpendingChartsView(
                     monthly: monthly, stores: storeTotals,
                     highlightMonth: mode == .month ? Self.monthKey(monthCursor) : nil
@@ -61,6 +55,29 @@ struct OverviewView: View {
             // the Review page, same reasoning as switchToPage('overview') in dashboard.html.
             if isActive { Task { await load() } }
         }
+        .onChange(of: store.receipts) {
+            if isActive { Task { await load() } }   // a sync or an undo changed the data
+        }
+    }
+
+    /// The hero number with its change against the previous period.
+    private var totalBlock: some View {
+        let total = summary?.total ?? 0
+        return VStack(spacing: 2) {
+            Text("Total")
+                .font(AppTheme.body(12, weight: .medium))
+                .foregroundColor(AppTheme.label)
+            Text(total > 0 ? fmtMoney(total) : "—")
+                .font(AppTheme.mono(36, weight: .semibold))
+                .foregroundColor(AppTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            if total > 0, let delta = delta(current: total, previous: previousSummary?.total) {
+                Text(delta.text)
+                    .font(AppTheme.body(13, weight: .medium))
+                    .foregroundColor(color(delta))
+            }
+        }
     }
 
     private var header: some View {
@@ -75,20 +92,22 @@ struct OverviewView: View {
             HStack(spacing: 10) {
                 switch mode {
                 case .month, .year:
-                    navButton("‹") { moveCursor(-1) }
+                    navButton("chevron.left", help: "Previous") { moveCursor(-1) }
                     Text(rangeLabel)
                         .font(AppTheme.display(17))
+                        .foregroundColor(AppTheme.ink)
                         .frame(minWidth: 150)
                         .multilineTextAlignment(.center)
-                    navButton("›") { moveCursor(1) }
+                    navButton("chevron.right", help: "Next") { moveCursor(1) }
+                        .disabled(atLatest)
+                        .opacity(atLatest ? 0.3 : 1)
                 case .custom:
                     DatePicker("From", selection: $customStart, displayedComponents: .date)
                     DatePicker("To", selection: $customEnd, displayedComponents: .date)
                 case .all:
-                    Text("All time").font(AppTheme.display(17))
+                    Text("All time").font(AppTheme.display(17)).foregroundColor(AppTheme.ink)
                 }
-                navButton("⟳") { store.invalidateStatsCache(); Task { await load() } }
-                #if os(macOS)
+                navButton("arrow.clockwise", help: "Refresh") { store.invalidateStatsCache(); Task { await load() } }
                 Button {
                     store.exportSheetPresented = true
                 } label: {
@@ -96,7 +115,6 @@ struct OverviewView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(AppTheme.inkSoft)
-                #endif
             }
         }
         .onChange(of: mode) { Task { await load() } }
@@ -104,17 +122,21 @@ struct OverviewView: View {
         .onChange(of: customEnd) { if mode == .custom { Task { await load() } } }
     }
 
-    private func navButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+    private var atLatest: Bool { OverviewCursor.isLatest(monthCursor, byYear: mode == .year) }
+
+    private func navButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(symbol)
-                .font(AppTheme.body(15))
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .medium))
                 .frame(width: 30, height: 30)
                 .background(AppTheme.paper)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppTheme.rule, lineWidth: 1))
                 .cornerRadius(4)
                 .foregroundColor(AppTheme.ink)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(help)
     }
 
     private var rangeLabel: String {
@@ -202,18 +224,16 @@ struct OverviewView: View {
         }
     }
 
-    /// "+12% vs last month"; nil when there is no comparison period.
-    private func deltaText(current: Double, previous: Double?) -> String? {
-        guard previousSummary != nil, let previous else { return previousSummary == nil ? nil : "new vs \(previousLabel)" }
-        guard previous > 0 else { return current > 0 ? "new vs \(previousLabel)" : nil }
-        let pct = (current - previous) / previous * 100
-        guard abs(pct) >= 0.5 else { return "±0% vs \(previousLabel)" }
-        return String(format: "%+.0f%% vs %@", pct, previousLabel)
+    private func delta(current: Double, previous: Double?) -> SpendDelta? {
+        SpendDelta.make(current: current, previous: previous, hasComparison: previousSummary != nil, label: previousLabel)
     }
 
-    private func deltaColor(current: Double, previous: Double?) -> Color {
-        guard let previous, previous > 0 else { return AppTheme.inkSoft }
-        return current > previous ? AppTheme.penRed : (current < previous ? AppTheme.stampGreen : AppTheme.inkSoft)
+    private func color(_ delta: SpendDelta) -> Color {
+        switch delta.trend {
+        case .up: return AppTheme.penRed
+        case .down: return AppTheme.greenText
+        case .flat: return AppTheme.label
+        }
     }
 
     @ViewBuilder
@@ -223,9 +243,15 @@ struct OverviewView: View {
                 ForEach(summary.categories) { cat in categoryNode(cat) }
             }
         } else {
-            Text("No spending in this period.")
-                .font(AppTheme.body(13))
-                .foregroundColor(AppTheme.inkSoft)
+            VStack(spacing: 10) {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 36))
+                    .foregroundColor(AppTheme.label)
+                Text("No spending in this period.")
+                    .font(AppTheme.body(14))
+                    .foregroundColor(AppTheme.label)
+            }
+            .padding(.top, monthly.isEmpty ? 30 : 8)
         }
     }
 
@@ -306,16 +332,17 @@ struct OverviewView: View {
 
     private func purchaseRow(_ p: PurchaseRow) -> some View {
         HStack(spacing: 8) {
-            Text(p.date ?? "").font(AppTheme.mono(12)).frame(width: 84, alignment: .leading)
+            Text(p.date ?? "").font(AppTheme.mono(12)).foregroundColor(AppTheme.ink).frame(width: 84, alignment: .leading)
             Text(p.store ?? "").font(AppTheme.body(12)).foregroundColor(AppTheme.inkSoft).frame(minWidth: 60, alignment: .leading)
-            Text(p.translationEn ?? p.nameDe ?? "").font(AppTheme.body(12)).frame(maxWidth: .infinity, alignment: .leading)
-            Text(fmtMoney(p.totalPrice)).font(AppTheme.mono(12)).frame(width: 70, alignment: .trailing)
+            Text(p.translationEn ?? p.nameDe ?? "").font(AppTheme.body(12)).foregroundColor(AppTheme.ink).frame(maxWidth: .infinity, alignment: .leading)
+            Text(fmtMoney(p.totalPrice)).font(AppTheme.mono(12)).foregroundColor(AppTheme.ink).frame(width: 70, alignment: .trailing)
             Button("Edit") {
+                store.flaggedPaneOpen = false
                 Task { await store.jumpToItem(receiptId: p.receiptId, itemDictionaryId: p.itemDictionaryId) }
             }
             .font(AppTheme.body(11))
             .buttonStyle(.plain)
-            .foregroundColor(AppTheme.inkSoft)
+            .foregroundColor(AppTheme.ink)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .overlay(RoundedRectangle(cornerRadius: 3).stroke(AppTheme.rule, lineWidth: 1))
         }
@@ -323,19 +350,21 @@ struct OverviewView: View {
     }
 
     private func treeRow(label: String, total: Double, depth: Int, isOpen: Bool, previous: Double? = nil, action: @escaping () -> Void) -> some View {
-        let rowBackground: Color = depth == 0 ? AppTheme.paper : (depth == 1 ? Color(hex: 0xFBF8F1) : .white)
+        let rowBackground: Color = depth == 0 ? AppTheme.paper : (depth == 1 ? AppTheme.raised : AppTheme.card)
         return Button(action: action) {
             HStack {
-                Text(isOpen ? "▾" : "▸")
-                    .frame(width: 12)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(AppTheme.inkSoft)
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    .frame(width: 12)
                 Text(label)
                     .font(AppTheme.body(depth == 0 ? 14 : 13))
                 Spacer()
-                if depth < 2, let delta = deltaText(current: total, previous: previous) {
-                    Text(delta)
+                if depth < 2, let delta = delta(current: total, previous: previous) {
+                    Text(delta.text)
                         .font(AppTheme.body(11))
-                        .foregroundColor(deltaColor(current: total, previous: previous))
+                        .foregroundColor(color(delta))
                 }
                 Text(fmtMoney(total))
                     .font(AppTheme.mono(depth == 0 ? 14 : 13))
@@ -343,10 +372,12 @@ struct OverviewView: View {
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .padding(.leading, CGFloat(depth) * 20)
+            .hoverHighlight()
             .background(rowBackground)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppTheme.rule, lineWidth: 1))
             .cornerRadius(4)
             .foregroundColor(AppTheme.ink)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

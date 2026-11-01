@@ -1,14 +1,19 @@
 import SwiftUI
 
-/// Ports renderItemRow() from dashboard.html: an editable line item with qty/price, an English
-/// translation field, and cascading category > subcategory > item_group pickers.
+/// Ports renderItemRow() from dashboard.html: a compact summary (name, translation, `qty × price`, category path, total)
+/// that expands to the inline editor with qty/price, an English translation field, and cascading category > subcategory >
+/// item_group pickers. Items that need a look start open.
 struct ItemRowView: View {
     @EnvironmentObject var store: ReceiptStore
+    @EnvironmentObject var snacks: SnackCenter
     let receiptId: Int
     let item: LineItemDetail
+    /// Overview's `Edit` (or a link from the flagged items) points at this item: it opens, also when already on screen.
+    let highlighted: Bool
 
     enum SaveState { case idle, saving, saved, failed }
 
+    @State private var open: Bool
     @State private var qtyText: String
     @State private var priceText: String
     @State private var translationText: String
@@ -18,9 +23,11 @@ struct ItemRowView: View {
     @State private var saveState: SaveState = .idle
     @State private var usage: (items: Int, receipts: Int)?
 
-    init(receiptId: Int, item: LineItemDetail) {
+    init(receiptId: Int, item: LineItemDetail, highlighted: Bool) {
         self.receiptId = receiptId
         self.item = item
+        self.highlighted = highlighted
+        _open = State(initialValue: item.needsReview || highlighted)
         _qtyText = State(initialValue: trimmedNumber(item.quantity))
         _priceText = State(initialValue: String(format: "%.2f", item.unitPrice))
         _translationText = State(initialValue: item.translationEn ?? "")
@@ -30,7 +37,7 @@ struct ItemRowView: View {
     }
 
     private var previewTotal: String {
-        guard let q = Double(qtyText), let p = Double(priceText) else { return "—" }
+        guard let q = DecimalInput.parse(qtyText), let p = DecimalInput.parse(priceText) else { return "—" }
         return fmtMoney(round2(q * p))
     }
 
@@ -54,22 +61,83 @@ struct ItemRowView: View {
         }
     }
 
+    /// `1 × €2.49 · Dairy › Milk`
+    private var summaryLine: String {
+        let path = [item.subcategory, item.itemGroup].filter { !$0.isEmpty }.joined(separator: " › ")
+        let amount = "\(trimmedNumber(item.quantity)) × \(fmtMoney(item.unitPrice))"
+        return path.isEmpty ? amount : "\(amount) · \(path)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(item.nameDe ?? "")
-                .font(AppTheme.body(14, weight: .semibold))
-                .foregroundColor(AppTheme.ink)
+            summary
+            if item.categoryFlagged { FlaggedItemMark(item: item) }
+            if open { editor }
+        }
+        .padding(item.needsReview ? 10 : 0)
+        .background(item.needsReview ? AppTheme.penRedBg : Color.clear)
+        .cornerRadius(item.needsReview ? 4 : 0)
+        .onChange(of: highlighted) { if highlighted { open = true } }
+        // Another row of the same product saved, or a sync arrived: show what is true now.
+        .onChange(of: item.quantity) { qtyText = trimmedNumber(item.quantity) }
+        .onChange(of: item.unitPrice) { priceText = String(format: "%.2f", item.unitPrice) }
+        .onChange(of: item.translationEn) { translationText = item.translationEn ?? "" }
+        .onChange(of: item.category) { category = item.category }
+        .onChange(of: item.subcategory) { subcategory = item.subcategory }
+        .onChange(of: item.itemGroup) { itemGroup = item.itemGroup }
+    }
 
+    private var summary: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.12)) { open.toggle() }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(AppTheme.inkSoft)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                    .frame(width: 10)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.nameDe ?? item.rawText ?? "")
+                        .font(AppTheme.body(14, weight: .semibold))
+                        .foregroundColor(AppTheme.ink)
+                        .multilineTextAlignment(.leading)
+                    if !open {
+                        if let translation = item.translationEn, !translation.isEmpty {
+                            Text(translation)
+                                .font(AppTheme.body(12))
+                                .foregroundColor(AppTheme.inkSoft)
+                                .lineLimit(1)
+                        }
+                        Text(summaryLine)
+                            .font(AppTheme.mono(11))
+                            .foregroundColor(AppTheme.inkSoft)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                Text(open ? previewTotal : fmtMoney(item.totalPrice))
+                    .font(AppTheme.mono(13, weight: .medium))
+                    .foregroundColor(AppTheme.ink)
+            }
+            .padding(.vertical, 2)
+            .hoverHighlight()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(open ? "Collapse" : "Edit this item")
+    }
+
+    private var editor: some View {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
                 TextField("", text: $qtyText)
                     .frame(width: 56)
-                    .decimalKeyboard()
                     .accessibilityLabel("Quantity")
                     .accessibilityIdentifier("qtyField")
                 Text("×").foregroundColor(AppTheme.inkSoft)
                 TextField("", text: $priceText)
                     .frame(width: 64)
-                    .decimalKeyboard()
                     .accessibilityLabel("Unit price")
                     .accessibilityIdentifier("priceField")
                 Text("=").foregroundColor(AppTheme.inkSoft)
@@ -90,7 +158,8 @@ struct ItemRowView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(AppTheme.body(12))
 
-            categoryPickers
+            HStack(spacing: 6) { pickers }
+                .labelsHidden()
                 .font(AppTheme.body(12))
 
             if categoryChanged {
@@ -112,89 +181,60 @@ struct ItemRowView: View {
                     .accessibilityIdentifier("saveItemButton")
                     .fixedSize()
 
-                Button {
-                    Task { await store.deleteLineItem(lineItemId: item.id, receiptId: receiptId) }
-                } label: {
+                Button { deleteItem() } label: {
                     Image(systemName: "trash")
                         .foregroundColor(AppTheme.inkSoft)
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
+                .help("Delete item")
 
                 Spacer()
             }
             .font(AppTheme.body(12))
         }
+        .padding(.leading, 18)
         .task(id: item.itemDictionaryId) {
             let u = await store.dictionaryUsage(itemDictionaryId: item.itemDictionaryId)
             usage = (u.items, u.receipts)
         }
-        .padding(item.needsReview ? 10 : 0)
-        .background(item.needsReview ? AppTheme.penRedBg : Color.clear)
-        .cornerRadius(item.needsReview ? 4 : 0)
     }
 
-    /// category > subcategory > item_group. One row on the Mac; stacked and labelled on the phone, where three
-    /// pickers do not fit side by side.
+    /// category > subcategory > item_group. Through setters rather than onChange, so a change from outside (a sync) cannot
+    /// reset the lower levels.
     @ViewBuilder
-    private var categoryPickers: some View {
-        #if os(macOS)
-        HStack(spacing: 6) { pickers(labelled: false) }
-        #else
-        VStack(spacing: 0) { pickers(labelled: true) }
-        #endif
+    private var pickers: some View {
+        Picker("Category", selection: Binding(get: { category }, set: selectCategory)) {
+            ForEach(store.taxonomy.categoryNames(), id: \.self) { Text($0).tag($0) }
+        }
+        .frame(minWidth: 90, idealWidth: 130)
+        Picker("Subcategory", selection: Binding(get: { subcategory }, set: selectSubcategory)) {
+            ForEach(store.taxonomy.subcategoryNames(in: category), id: \.self) { Text($0).tag($0) }
+        }
+        .frame(minWidth: 90, idealWidth: 140)
+        Picker("Item group", selection: $itemGroup) {
+            ForEach(store.taxonomy.itemGroups(category: category, subcategory: subcategory), id: \.self) { Text($0).tag($0) }
+        }
+        .frame(minWidth: 90, idealWidth: 140)
     }
 
-    @ViewBuilder
-    private func pickers(labelled: Bool) -> some View {
-        pickerRow("Category", labelled: labelled) {
-            Picker("Category", selection: $category) {
-                ForEach(store.taxonomy.categoryNames(), id: \.self) { Text($0).tag($0) }
-            }
-            .frame(minWidth: 90, idealWidth: 130)
-            .onChange(of: category) {
-                subcategory = store.taxonomy.subcategoryNames(in: category).first ?? ""
-                itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
-            }
-        }
-        pickerRow("Subcategory", labelled: labelled) {
-            Picker("Subcategory", selection: $subcategory) {
-                ForEach(store.taxonomy.subcategoryNames(in: category), id: \.self) { Text($0).tag($0) }
-            }
-            .frame(minWidth: 90, idealWidth: 140)
-            .onChange(of: subcategory) {
-                itemGroup = store.taxonomy.itemGroups(category: category, subcategory: subcategory).first ?? ""
-            }
-        }
-        pickerRow("Item group", labelled: labelled) {
-            Picker("Item group", selection: $itemGroup) {
-                ForEach(store.taxonomy.itemGroups(category: category, subcategory: subcategory), id: \.self) { Text($0).tag($0) }
-            }
-            .frame(minWidth: 90, idealWidth: 140)
-        }
+    private func selectCategory(_ value: String) {
+        category = value
+        subcategory = store.taxonomy.subcategoryNames(in: value).first ?? ""
+        itemGroup = store.taxonomy.itemGroups(category: value, subcategory: subcategory).first ?? ""
     }
 
-    /// Mac: the bare picker. Phone: a titled row (label left, current value right) so the three levels read clearly.
-    @ViewBuilder
-    private func pickerRow<P: View>(_ title: String, labelled: Bool, @ViewBuilder picker: () -> P) -> some View {
-        if labelled {
-            HStack {
-                Text(title).foregroundColor(AppTheme.inkSoft)
-                Spacer()
-                picker().labelsHidden().tint(AppTheme.ink)
-            }
-        } else {
-            picker().labelsHidden()
-        }
+    private func selectSubcategory(_ value: String) {
+        subcategory = value
+        let groups = store.taxonomy.itemGroups(category: category, subcategory: value)
+        if !groups.contains(itemGroup) { itemGroup = groups.first ?? "" }
     }
 
     private func save() async {
-        guard let qty = Double(qtyText), let price = Double(priceText) else {
+        guard let qty = DecimalInput.parse(qtyText), let price = DecimalInput.parse(priceText) else {
             saveState = .failed
-            Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                saveState = .idle
-            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if saveState == .failed { saveState = .idle }
             return
         }
         saveState = .saving
@@ -204,5 +244,15 @@ struct ItemRowView: View {
         )
         await store.updateLineItem(lineItemId: item.id, quantity: qty, unitPrice: price, receiptId: receiptId)
         saveState = .saved
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        if saveState == .saved { saveState = .idle }
+    }
+
+    private func deleteItem() {
+        let (lineItemId, receiptId) = (item.id, receiptId)
+        Task {
+            guard let removed = await store.deleteLineItemForUndo(lineItemId: lineItemId, receiptId: receiptId) else { return }
+            snacks.show("Item deleted") { await store.restoreDeletedLineItem(removed) }
+        }
     }
 }

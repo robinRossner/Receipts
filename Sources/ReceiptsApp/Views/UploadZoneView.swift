@@ -20,7 +20,7 @@ struct UploadZoneView: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity)
-        .background(isTargeted ? Color(hex: 0xFBF8F1) : AppTheme.paper)
+        .background(isTargeted ? AppTheme.raised : AppTheme.paper)
         .overlay(
             RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(isTargeted ? AppTheme.penRed : AppTheme.rule, style: StrokeStyle(lineWidth: 2, dash: [5]))

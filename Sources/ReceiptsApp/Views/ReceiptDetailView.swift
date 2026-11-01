@@ -5,13 +5,10 @@ import SwiftUI
 /// totals, and the confirm button.
 struct ReceiptDetailView: View {
     @EnvironmentObject var store: ReceiptStore
+    @EnvironmentObject var snacks: SnackCenter
     let detail: ReceiptDetail
 
     @AppStorage("showReceiptPhoto") private var showPhoto = true
-    #if os(iOS)
-    /// iPhone: the photo and the items are two tabs of the same card instead of two columns.
-    @State private var photoTab = false
-    #endif
     @State private var storeText: String
     @State private var totalValue: Double?
     @State private var dateValue: Date?
@@ -43,7 +40,6 @@ struct ReceiptDetailView: View {
     private var photoNote: String? { store.photoFetchNotes[detail.id] ?? detail.photoNote }
 
     var body: some View {
-        #if os(macOS)
         GeometryReader { geo in
             if showPhoto && geo.size.width >= photoMinPaneWidth {
                 HSplitView {
@@ -56,42 +52,15 @@ struct ReceiptDetailView: View {
                 receiptColumn
             }
         }
-        #else
-        receiptColumn
-            .task(id: detail.id) { await store.ensureLocalPhoto(id: detail.id) }
-        #endif
     }
 
-    #if os(macOS)
     private let cardPadding: CGFloat = 32
     private let cardOuterH: CGFloat = 24
     private let cardOuterV: CGFloat = 32
-    #else
-    private let cardPadding: CGFloat = 16
-    private let cardOuterH: CGFloat = 12
-    private let cardOuterV: CGFloat = 12
-    #endif
 
     private var receiptColumn: some View {
         VStack(spacing: 0) {
-            #if os(iOS)
-            Picker("", selection: $photoTab) {
-                Text("Items").tag(false)
-                Text("Photo").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(AppTheme.paper)
-            Rectangle().fill(AppTheme.rule).frame(height: 1)
-            if photoTab {
-                ReceiptPhotoView(path: detail.sourceImage, note: photoNote)
-            } else {
-                itemsScroll
-            }
-            #else
             itemsScroll
-            #endif
             Rectangle().fill(AppTheme.rule).frame(height: 1)
             actions
         }
@@ -121,8 +90,7 @@ struct ReceiptDetailView: View {
                         totalsFooter
                     }
                     .padding(cardPadding)
-                    .background(AppTheme.paper)
-                    .shadow(color: .black.opacity(0.14), radius: 20, y: 12)
+                    .background(Rectangle().fill(AppTheme.paper).shadow(color: .black.opacity(0.14), radius: 20, y: 12))
                     .frame(maxWidth: 900)
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, cardOuterH)
@@ -138,14 +106,15 @@ struct ReceiptDetailView: View {
                         }
                     }
                 }
-                .onChange(of: store.highlightRequest) {
+                // Overview's `Edit`: scroll to the item and let its tint fade. The request can be there before this
+                // view is (it opened another receipt), or arrive while it is on screen.
+                .task(id: store.highlightRequest?.token) {
                     guard let req = store.highlightRequest, req.receiptId == detail.id else { return }
+                    try? await Task.sleep(nanoseconds: 150_000_000)
                     withAnimation { proxy.scrollTo(req.itemDictionaryId, anchor: .center) }
-                    Task {
-                        try? await Task.sleep(nanoseconds: 1_600_000_000)
-                        if store.highlightRequest?.token == req.token {
-                            store.highlightRequest = nil
-                        }
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    if store.highlightRequest?.token == req.token {
+                        store.highlightRequest = nil
                     }
                 }
             }
@@ -165,17 +134,17 @@ struct ReceiptDetailView: View {
                 Button {
                     store.deleteConfirmationPresented = true
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11))
+                    Image(systemName: "trash")
+                        .font(.system(size: 13))
                         .foregroundColor(AppTheme.inkSoft)
-                        .frame(width: 24, height: 24)
-                        .background(Circle().stroke(AppTheme.rule))
+                        .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Delete receipt (⌘⌫)")
                 .confirmationDialog("Delete this receipt?", isPresented: $store.deleteConfirmationPresented) {
                     Button("Delete", role: .destructive) {
-                        Task { await store.deleteReceipt(id: detail.id) }
+                        Task { await store.deleteWithUndo(id: detail.id, snacks: snacks) }
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
@@ -212,11 +181,7 @@ struct ReceiptDetailView: View {
         }
     }
 
-    #if os(macOS)
     private var dateFieldStyle: FieldDatePickerStyle { .field }
-    #else
-    private var dateFieldStyle: CompactDatePickerStyle { .compact }
-    #endif
 
     private func commitStore() {
         let trimmed = storeText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -241,7 +206,12 @@ struct ReceiptDetailView: View {
     private var warningBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(detail.reviewReasons, id: \.self) { reason in
-                Text("⚠ \(reason)")
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .padding(.top, 2)
+                    Text(reason).fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .font(AppTheme.body(13))
@@ -249,8 +219,8 @@ struct ReceiptDetailView: View {
         .padding(12)
         .background(AppTheme.penRedBg)
         .foregroundColor(AppTheme.penRed)
+        .overlay(alignment: .leading) { Rectangle().fill(AppTheme.penRed).frame(width: 3) }
         .cornerRadius(4)
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppTheme.penRed))
     }
 
     private var itemsSection: some View {
@@ -260,9 +230,9 @@ struct ReceiptDetailView: View {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(Array(group.enumerated()), id: \.element.id) { index, item in
-                            ItemRowView(receiptId: detail.id, item: item)
+                            ItemRowView(receiptId: detail.id, item: item, highlighted: isHighlighted(groupId))
                             if index < group.count - 1 {
-                                Rectangle().fill(Color.black.opacity(0.06)).frame(height: 1)
+                                Rectangle().fill(AppTheme.rule.opacity(0.5)).frame(height: 1)
                             }
                         }
                     }
@@ -317,8 +287,8 @@ struct ReceiptDetailView: View {
             if showAddForm {
                 HStack(spacing: 6) {
                     TextField("Item name", text: $addName)
-                    TextField("Qty", text: $addQty).frame(width: 60).decimalKeyboard()
-                    TextField("Price €", text: $addPrice).frame(width: 70).decimalKeyboard()
+                    TextField("Qty", text: $addQty).frame(width: 60)
+                    TextField("Price €", text: $addPrice).frame(width: 70)
                     Button(addBusy ? "Adding…" : "Add") {
                         Task { await addItem() }
                     }
@@ -336,49 +306,95 @@ struct ReceiptDetailView: View {
 
     private func addItem() async {
         let name = addName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty, let price = Double(addPrice) else {
+        guard !name.isEmpty, let price = DecimalInput.parse(addPrice) else {
             addError = "Enter an item name and a price."
             return
         }
         addError = nil
         addBusy = true
-        let qty = Double(addQty) ?? 1
+        let qty = DecimalInput.parse(addQty) ?? 1
         await store.addItem(receiptId: detail.id, name: name, quantity: qty, unitPrice: price, rawText: nil)
         addName = ""; addPrice = ""; addQty = "1"
         addBusy = false
     }
 
     private var totalsFooter: some View {
-        HStack {
-            Text("Items total: \(fmtMoney(detail.computedSum))")
-            Spacer()
-            HStack(spacing: 6) {
-                Text("Printed total:")
+        let difference = detail.computedSum.flatMap { sum in totalValue.map { $0 - sum } }
+        // One row each, so nothing has to squeeze when the photo takes half of the pane.
+        return VStack(spacing: 6) {
+            HStack {
+                Text("Items total:").fixedSize()
+                Spacer()
+                Text(fmtMoney(detail.computedSum)).fontWeight(.semibold)
+            }
+            HStack {
+                Text("Printed total:").fixedSize()
+                Spacer()
                 TextField("Total", value: $totalValue, format: .currency(code: "EUR"))
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 100)
-                    .decimalKeyboard()
                     .focused($totalFocused)
                     .onSubmit(commitTotal)
                     .onChange(of: totalFocused) { if !totalFocused { commitTotal() } }
+            }
+            if let difference, abs(difference) > 0.004 {
+                HStack {
+                    Text("Difference:").fixedSize()
+                    Spacer()
+                    Text(fmtMoney(abs(difference))).fontWeight(.semibold)
+                }
+                .foregroundColor(AppTheme.penRed)
             }
         }
         .font(AppTheme.mono(14))
         .foregroundColor(AppTheme.ink)
     }
 
-    private var rerunMessage: String {
-        #if os(macOS)
-        "The archived photo is read again with the current AI provider. This replaces the store, date, total and all line items (including your edits) and marks the receipt as not yet reviewed."
-        #else
-        "The server reads the photo again and marks the receipt as not yet reviewed. If you already edited or confirmed this receipt, the server keeps your version."
-        #endif
+    private let rerunMessage = "The archived photo is read again with the current AI provider. This replaces the store, date, total and all line items (including your edits) and marks the receipt as not yet reviewed."
+
+    private var isStillReading: Bool { detail.processing?.isActive == true }
+
+    @ViewBuilder
+    private var confirmArea: some View {
+        if detail.reviewedAt != nil {
+            // A status rather than a dimmed button, so it stays readable in both modes.
+            Text("Reviewed ✓")
+                .font(AppTheme.body(14, weight: .semibold))
+                .foregroundColor(AppTheme.greenText)
+                .frame(minWidth: 200, minHeight: 38)
+                .background(AppTheme.greenBg)
+                .cornerRadius(6)
+        } else {
+            VStack(spacing: 5) {
+                Button {
+                    Task { await store.confirmWithUndo(id: detail.id, name: detail.store, snacks: snacks) }
+                } label: {
+                    Label("Looks good", systemImage: "checkmark")
+                        .font(AppTheme.body(14, weight: .semibold))
+                        .foregroundColor(AppTheme.onGreen)
+                        .frame(minWidth: 200, minHeight: 38)
+                        .background(AppTheme.stampGreen)
+                        .cornerRadius(6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy || isStillReading)
+                .opacity(isBusy || isStillReading ? 0.45 : 1)
+                .help(isStillReading ? "Still being read" : "Confirm (⌘↩)")
+                if detail.processing == nil {
+                    Text(ReviewQueue.hint(for: detail.id, in: store.receipts))
+                        .font(AppTheme.body(11))
+                        .foregroundColor(AppTheme.inkSoft)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+        }
     }
 
     private var actions: some View {
         HStack {
-            #if os(macOS)
             Button {
                 showPhoto.toggle()
             } label: {
@@ -388,46 +404,28 @@ struct ReceiptDetailView: View {
             .buttonStyle(.plain)
             .foregroundColor(AppTheme.inkSoft)
             .help("Show the archived photo beside the items (needs a wide window)")
-            #endif
 
             Spacer()
-            Button {
-                Task { await store.confirmReceipt(id: detail.id) }
-            } label: {
-                Text(detail.reviewedAt != nil ? "Reviewed ✓" : "Looks good")
-                    .font(AppTheme.body(14, weight: .semibold))
-                    .padding(.horizontal, 30)
-                    .padding(.vertical, 11)
-                    .background(AppTheme.stampGreen.opacity(detail.reviewedAt != nil ? 0.55 : 1))
-                    .foregroundColor(.white)
-                    .cornerRadius(4)
-            }
-            .buttonStyle(.plain)
-            .disabled(detail.reviewedAt != nil || isBusy)
-            .help("Confirm (⌘↩)")
+            confirmArea
             Spacer()
 
             Menu {
-                #if os(macOS)
                 Button("Re-run extraction…") { confirmRerun = true }
                 Button("Re-categorize items…") { confirmRecategorize = true }
-                #else
-                // The phone has no AI of its own: the server re-reads a photo it still holds.
-                if detail.photoLocation == "server" { Button("Re-run extraction…") { confirmRerun = true } }
-                Button("Delete receipt…", role: .destructive) { store.deleteConfirmationPresented = true }
-                #endif
+                if detail.reviewedAt != nil {
+                    Divider()
+                    Button("Mark as not reviewed") { Task { await store.markUnreviewed(id: detail.id) } }
+                }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
-            #if os(macOS)
             .menuStyle(.borderlessButton)
-            #endif
             .fixedSize()
             .disabled(isBusy)
             .help("More actions")
         }
         .padding(.horizontal, cardOuterH)
-        .padding(.vertical, 14)
+        .padding(.vertical, 10)
         .background(AppTheme.paper)
         .confirmationDialog("Re-run extraction?", isPresented: $confirmRerun) {
             Button("Re-run extraction", role: .destructive) {
@@ -498,16 +496,5 @@ private struct StoreNameField: View {
                 .frame(maxWidth: 260)
             }
         }
-    }
-}
-
-extension View {
-    /// Number pad with a decimal separator on the phone; nothing on the Mac.
-    @ViewBuilder func decimalKeyboard() -> some View {
-        #if os(iOS)
-        self.keyboardType(.decimalPad)
-        #else
-        self
-        #endif
     }
 }

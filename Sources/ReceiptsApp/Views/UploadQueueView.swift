@@ -22,7 +22,7 @@ struct UploadQueueView: View {
             }
             ProgressView(value: Double(finishedCount), total: Double(max(store.uploadQueue.count, 1)))
                 .progressViewStyle(.linear)
-                .tint(AppTheme.penRed)
+                .tint(AppTheme.ink)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(store.uploadQueue) { job in
@@ -76,7 +76,7 @@ struct UploadQueueView: View {
         .font(AppTheme.body(12))
         .contentShape(Rectangle())
         .onTapGesture {
-            if let id = receiptId(of: job) { Task { await store.loadReceiptDetail(id: id) } }
+            if let id = receiptId(of: job) { store.flaggedPaneOpen = false; Task { await store.loadReceiptDetail(id: id) } }
         }
     }
 
@@ -96,7 +96,7 @@ struct UploadQueueView: View {
         switch state {
         case .queued: Image(systemName: "clock").foregroundColor(AppTheme.inkSoft)
         case .scanning, .extracting, .categorizing, .saving, .uploading: ProgressView().controlSize(.mini)
-        case .done, .uploaded: Image(systemName: "checkmark.circle.fill").foregroundColor(AppTheme.ink)
+        case .done, .uploaded: Image(systemName: "checkmark.circle.fill").foregroundColor(AppTheme.greenText)
         case .duplicate: Image(systemName: "equal.circle").foregroundColor(AppTheme.inkSoft)
         case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundColor(AppTheme.penRed)
         case .cancelled: Image(systemName: "slash.circle").foregroundColor(AppTheme.inkSoft)

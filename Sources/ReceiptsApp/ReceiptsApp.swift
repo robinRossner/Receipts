@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 @main
 struct ReceiptsApp: App {
     @StateObject private var store: ReceiptStore
+    @StateObject private var snacks = SnackCenter()
 
     init() {
         let env = AppEnvironment.bootstrap()
@@ -18,6 +19,7 @@ struct ReceiptsApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
+                .environmentObject(snacks)
                 .frame(minWidth: 900, minHeight: 600)
                 .fileImporter(
                     isPresented: $store.isImporterPresented,
@@ -58,13 +60,22 @@ struct ReceiptsApp: App {
                     .keyboardShortcut("1", modifiers: .command)
                 Button("Overview") { store.page = .overview }
                     .keyboardShortcut("2", modifiers: .command)
+                Button("Items Without a Category") {
+                    store.page = .review
+                    store.flaggedPaneOpen = true
+                }
+                .keyboardShortcut("3", modifiers: .command)
                 Divider()
             }
 
             CommandMenu("Receipt") {
-                Button("Confirm") { Task { await store.confirmSelectedReceipt() } }
+                Button("Confirm") {
+                    // One still being read must stay unconfirmed: the server would treat that as the user's version.
+                    guard let detail = store.selectedReceipt, detail.reviewedAt == nil, detail.processing?.isActive != true else { return }
+                    Task { await store.confirmWithUndo(id: detail.id, name: detail.store, snacks: snacks) }
+                }
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(store.page != .review || store.selectedReceipt == nil || store.selectedReceipt?.reviewedAt != nil)
+                    .disabled(store.page != .review || store.flaggedPaneOpen || store.selectedReceipt == nil || store.selectedReceipt?.reviewedAt != nil || store.selectedReceipt?.processing?.isActive == true)
                 Button("Delete…") {
                     // While editing text, ⌘⌫ keeps its text meaning (delete to line start) instead of deleting the receipt.
                     if NSApp.keyWindow?.firstResponder is NSText {
@@ -74,11 +85,11 @@ struct ReceiptsApp: App {
                     }
                 }
                     .keyboardShortcut(.delete, modifiers: .command)
-                    .disabled(store.page != .review || store.selectedReceipt == nil)
+                    .disabled(store.page != .review || store.flaggedPaneOpen || store.selectedReceipt == nil)
                 Divider()
-                Button("Previous Receipt") { Task { await store.selectAdjacentReceipt(offset: -1) } }
+                Button("Previous Receipt") { store.flaggedPaneOpen = false; Task { await store.selectAdjacentReceipt(offset: -1) } }
                     .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-                Button("Next Receipt") { Task { await store.selectAdjacentReceipt(offset: 1) } }
+                Button("Next Receipt") { store.flaggedPaneOpen = false; Task { await store.selectAdjacentReceipt(offset: 1) } }
                     .keyboardShortcut(.downArrow, modifiers: [.command, .option])
             }
         }

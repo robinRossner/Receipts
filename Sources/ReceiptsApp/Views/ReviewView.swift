@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Ports #reviewPage from dashboard.html: a sidebar (upload zone + receipt list) and a main
-/// area showing the selected receipt's detail card.
+/// area showing the selected receipt's detail card (or the items without a category).
 struct ReviewView: View {
     @EnvironmentObject var store: ReceiptStore
 
@@ -29,21 +29,64 @@ struct ReviewView: View {
 
     private var mainArea: some View {
         Group {
-            if let detail = store.selectedReceipt {
+            if store.flaggedPaneOpen {
+                FlaggedItemsView(
+                    openReceipt: { receiptId, itemDictionaryId in
+                        store.flaggedPaneOpen = false
+                        Task { await store.jumpToItem(receiptId: receiptId, itemDictionaryId: itemDictionaryId) }
+                    },
+                    close: { store.flaggedPaneOpen = false }
+                )
+            } else if let detail = store.selectedReceipt {
                 ReceiptDetailView(detail: detail)
                     .id(detail.id)
             } else if store.receipts.isEmpty, let warning = store.providerWarning {
                 providerEmptyState(warning)
             } else {
-                Text("Upload a receipt to get started, or pick one from the list to review it.")
-                    .font(AppTheme.body(15))
-                    .foregroundColor(AppTheme.inkSoft)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 400)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                nothingSelected
             }
         }
         .background(AppTheme.desk)
+    }
+
+    /// Says what to do next, with the action right here.
+    private var nothingSelected: some View {
+        let waiting = store.receipts.filter { $0.reviewedAt == nil && $0.processing == nil }
+        return VStack(spacing: 14) {
+            Image(systemName: store.receipts.isEmpty ? "doc.text.viewfinder" : "checkmark.seal")
+                .font(.system(size: 40))
+                .foregroundColor(AppTheme.label)
+            Text(store.receipts.isEmpty ? "Add a receipt to get started." : (waiting.isEmpty ? "Nothing left to review." : "\(waiting.count) to review."))
+                .font(AppTheme.display(18))
+                .foregroundColor(AppTheme.ink)
+            if store.receipts.isEmpty {
+                Text("Drop photos on the box on the left, or choose them.")
+                    .font(AppTheme.body(13))
+                    .foregroundColor(AppTheme.label)
+                primaryButton("Import receipts…") { store.isImporterPresented = true }
+            } else if let next = waiting.first {
+                primaryButton("Start reviewing") { Task { await store.loadReceiptDetail(id: next.id) } }
+            } else {
+                Text("Pick a receipt from the list to look at it.")
+                    .font(AppTheme.body(13))
+                    .foregroundColor(AppTheme.label)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(AppTheme.body(13, weight: .medium))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 7)
+                .background(AppTheme.ink)
+                .foregroundColor(AppTheme.onInk)
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
     }
 
     /// Shown instead of the bare red warning when the AI backend isn't usable and there is nothing to look at yet.
@@ -68,7 +111,7 @@ struct ReviewView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 7)
                         .background(AppTheme.ink)
-                        .foregroundColor(.white)
+                        .foregroundColor(AppTheme.onInk)
                         .cornerRadius(4)
                 }
                 .buttonStyle(.plain)

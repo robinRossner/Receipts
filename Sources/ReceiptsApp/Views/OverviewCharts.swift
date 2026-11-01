@@ -8,35 +8,15 @@ struct SpendingChartsView: View {
     /// "yyyy-MM" to emphasise (month view); nil = no emphasis.
     let highlightMonth: String?
 
-    private static let maxSeries = 5
-    private static let otherName = "Other"
+    private static let otherName = SpendingSeries.otherName
 
-    /// Top categories by total get their own color; everything else is folded into "Other".
-    private var seriesNames: [String] {
-        var totals: [String: Double] = [:]
-        for m in monthly { totals[m.category, default: 0] += m.total }
-        let ranked = totals.sorted { $0.value > $1.value }.map(\.key).filter { $0 != Self.otherName }
-        let top = Array(ranked.prefix(Self.maxSeries))
-        return ranked.count > Self.maxSeries || totals[Self.otherName] != nil ? top + [Self.otherName] : top
-    }
-
-    private var bars: [(key: String, date: Date, category: String, total: Double)] {
-        let top = Set(seriesNames)
-        var acc: [String: Double] = [:]
-        for m in monthly {
-            let cat = top.contains(m.category) ? m.category : Self.otherName
-            acc[m.month + "|" + cat, default: 0] += m.total
-        }
-        return acc.compactMap { key, total in
-            let parts = key.components(separatedBy: "|")
-            guard let d = ReceiptDateFormat.date(from: parts[0] + "-01") else { return nil }
-            return (key, d, parts[1], total)
-        }.sorted { $0.date < $1.date }
-    }
+    private var seriesNames: [String] { SpendingSeries.names(monthly) }
 
     private var colorRange: [Color] {
         seriesNames.enumerated().map { i, name in name == Self.otherName ? AppTheme.chartOther : AppTheme.chartPalette[i % AppTheme.chartPalette.count] }
     }
+
+    private var months: Int { Set(monthly.map(\.month)).count }
 
     private var topStores: [StoreTotal] {
         let top = Array(stores.prefix(8))
@@ -50,18 +30,30 @@ struct SpendingChartsView: View {
         } else {
             VStack(alignment: .leading, spacing: 20) {
                 chartCard("SPENDING BY MONTH") {
-                    Chart(bars, id: \.key) { bar in
-                        BarMark(x: .value("Month", bar.date, unit: .month), y: .value("€", bar.total))
+                    Chart(SpendingSeries.bars(monthly)) { bar in
+                        // One month alone would otherwise fill the whole chart.
+                        BarMark(x: .value("Month", bar.date, unit: .month), y: .value("€", bar.total), width: months == 1 ? .fixed(48) : .automatic)
                             .foregroundStyle(by: .value("Category", bar.category))
                             .opacity(isDimmed(bar.date) ? 0.45 : 1)
                     }
                     .chartForegroundStyleScale(domain: seriesNames, range: colorRange)
-                    .chartXAxis { AxisMarks(values: .stride(by: .month)) { _ in
-                        AxisGridLine(); AxisValueLabel(format: .dateTime.month(.abbreviated))
-                    } }
+                    .chartXAxis {
+                        // Many months (a long custom range, all time) would not fit a label each.
+                        if months <= 12 {
+                            AxisMarks(values: .stride(by: .month)) { _ in
+                                AxisGridLine().foregroundStyle(AppTheme.rule.opacity(0.4))
+                                AxisValueLabel(format: .dateTime.month(.abbreviated)).foregroundStyle(AppTheme.inkSoft)
+                            }
+                        } else {
+                            AxisMarks(values: .automatic(desiredCount: 8)) { _ in
+                                AxisGridLine().foregroundStyle(AppTheme.rule.opacity(0.4))
+                                AxisValueLabel(format: .dateTime.month(.abbreviated).year(.twoDigits)).foregroundStyle(AppTheme.inkSoft)
+                            }
+                        }
+                    }
                     .chartYAxis { AxisMarks { v in
-                        AxisGridLine()
-                        AxisValueLabel { if let d = v.as(Double.self) { Text("€\(Int(d))") } }
+                        AxisGridLine().foregroundStyle(AppTheme.rule.opacity(0.6))
+                        AxisValueLabel { if let d = v.as(Double.self) { Text("€\(Int(d))").foregroundStyle(AppTheme.inkSoft) } }
                     } }
                     .chartLegend(position: .bottom, alignment: .leading)
                     .frame(height: 220)
@@ -69,12 +61,12 @@ struct SpendingChartsView: View {
                 chartCard("BY STORE") {
                     Chart(topStores) { s in
                         BarMark(x: .value("€", s.total), y: .value("Store", s.store))
-                            .foregroundStyle(AppTheme.ink)
+                            .foregroundStyle(AppTheme.chartPalette[2])
                             .annotation(position: .trailing) {
                                 Text(fmtMoney(s.total)).font(AppTheme.mono(10)).foregroundColor(AppTheme.inkSoft)
                             }
                     }
-                    .chartYAxis { AxisMarks(preset: .extended) { _ in AxisValueLabel() } }
+                    .chartYAxis { AxisMarks(preset: .extended) { _ in AxisValueLabel().foregroundStyle(AppTheme.ink) } }
                     .chartXAxis(.hidden)
                     .frame(height: CGFloat(max(topStores.count, 1)) * 28 + 12)
                 }
@@ -91,8 +83,9 @@ struct SpendingChartsView: View {
     private func chartCard<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(AppTheme.body(11, weight: .medium))
-                .foregroundColor(AppTheme.inkSoft)
+                .font(AppTheme.body(11, weight: .semibold))
+                .kerning(0.6)
+                .foregroundColor(AppTheme.label)
             content()
         }
         .padding(14)
@@ -123,8 +116,8 @@ struct PriceHistoryChart: View {
             }
             .chartForegroundStyleScale(domain: names, range: names.indices.map { AppTheme.chartPalette[$0 % AppTheme.chartPalette.count] })
             .chartYAxis { AxisMarks { v in
-                AxisGridLine()
-                AxisValueLabel { if let d = v.as(Double.self) { Text(String(format: "€%.2f", d)) } }
+                AxisGridLine().foregroundStyle(AppTheme.rule.opacity(0.6))
+                AxisValueLabel { if let d = v.as(Double.self) { Text(String(format: "€%.2f", d)).foregroundStyle(AppTheme.inkSoft) } }
             } }
             .chartLegend(position: .bottom, alignment: .leading)
             .frame(height: 140)

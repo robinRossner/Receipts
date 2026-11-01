@@ -48,10 +48,18 @@ struct ReceiptPhotoView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
+            #if os(iOS)
+            Rectangle().fill(Theme.rule).frame(height: 1)
+            #else
             Rectangle().fill(AppTheme.rule).frame(height: 1)
+            #endif
             content
         }
+        #if os(iOS)
+        .background(Theme.desk)
+        #else
         .background(AppTheme.desk)
+        #endif
         .task(id: "\(path ?? "")|\(note ?? "")") {
             zoom = 1
             guard let path else { state = .missing; return }
@@ -65,6 +73,41 @@ struct ReceiptPhotoView: View {
         }
     }
 
+    #if os(iOS)
+    private var toolbar: some View {
+        HStack(spacing: 2) {
+            SectionLabel(text: "Photo")
+            Spacer()
+            IconButton(systemName: "minus.magnifyingglass", label: "Zoom out", color: Theme.ink, size: 16) { setZoom(zoom / 1.5) }
+            barText("Fit", active: zoom == 1) { setZoom(1) }
+            barText("100%", active: isLoaded && zoom == actualSizeZoom && zoom != 1) { setZoom(actualSizeZoom) }
+            IconButton(systemName: "plus.magnifyingglass", label: "Zoom in", color: Theme.ink, size: 16) { setZoom(zoom * 1.5) }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .background(Theme.paper)
+        .disabled(!isLoaded)
+        .opacity(isLoaded ? 1 : 0.4)
+    }
+
+    private func barText(_ title: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(Theme.mono(13, active ? .semibold : .regular))
+                .foregroundStyle(Theme.ink)
+                .padding(.horizontal, 8)
+                .frame(minWidth: 44, minHeight: 32)
+                .background(active ? Theme.rule.opacity(0.6) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func setZoom(_ value: CGFloat) {
+        withAnimation(.easeOut(duration: 0.15)) { zoom = min(maxZoom, max(1, value)) }
+    }
+    #else
     private var toolbar: some View {
         HStack(spacing: 8) {
             Text("PHOTO")
@@ -92,6 +135,7 @@ struct ReceiptPhotoView: View {
         .padding(.vertical, 8)
         .background(AppTheme.paper)
     }
+    #endif
 
     private var isLoaded: Bool { if case .loaded = state { return true }; return false }
 
@@ -116,6 +160,24 @@ struct ReceiptPhotoView: View {
         case .loading:
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
         case .missing:
+            #if os(iOS)
+            VStack(spacing: 12) {
+                Image(systemName: "photo.badge.exclamationmark")
+                    .font(.system(size: 44))
+                Text(note ?? "Image file not found")
+                    .font(Theme.body(15))
+                    .multilineTextAlignment(.center)
+                if note == nil, let path {
+                    Text(path)
+                        .font(Theme.mono(10))
+                        .textSelection(.enabled)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .foregroundStyle(Theme.label)
+            .padding(32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            #else
             VStack(spacing: 8) {
                 Image(systemName: "photo.badge.exclamationmark")
                     .font(.system(size: 28))
@@ -132,6 +194,7 @@ struct ReceiptPhotoView: View {
             .foregroundColor(AppTheme.inkSoft)
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            #endif
         case .loaded(let image):
             GeometryReader { geo in
                 let fit = fitSize(for: image.pixelSize, in: geo.size)
@@ -148,6 +211,9 @@ struct ReceiptPhotoView: View {
                         .help("Click to open in Preview")
                         #endif
                 }
+                #if os(iOS)
+                .background(Color(white: 0.2))
+                #endif
                 .gesture(
                     MagnifyGesture()
                         .onChanged { value in

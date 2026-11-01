@@ -40,11 +40,7 @@ struct SyncBannersView: View {
     @ObservedObject var sync: SyncCoordinator
     @EnvironmentObject var store: ReceiptStore
 
-    #if os(macOS)
     private let bannerPadding: CGFloat = 24
-    #else
-    private let bannerPadding: CGFloat = 14
-    #endif
 
     var body: some View {
         ForEach(sync.banners, id: \.self) { text in
@@ -119,7 +115,6 @@ struct ReceiptProcessingPanel: View {
     }
 }
 
-#if os(macOS)
 /// Settings > Cloud sync: switch, server URL, token (Keychain), connection test, status.
 struct CloudSyncSettingsView: View {
     @EnvironmentObject var store: ReceiptStore
@@ -206,4 +201,3 @@ struct CloudSyncSettingsView: View {
         .onChange(of: serverURL) { store.syncSettingsChanged() }
     }
 }
-#endif

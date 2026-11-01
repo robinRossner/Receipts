@@ -76,6 +76,14 @@ With it **on**:
 - Banners show the server's `archive_overdue` / `disk_warning`; a local notification (and banner) appears
   when the Mac has not synced for 30 days.
 
+**Flagged categories ("no good category").** When the AI finds no fitting category in the taxonomy for an item it flags the
+item instead of forcing a poor fit: the dictionary entry is filed under Other > Miscellaneous > General (so Overview totals
+stay valid), `category_flagged` is set and `suggested_category` / `suggested_parent` say what is missing (e.g. "Pet Food" under
+"Household > Pets"). The Mac pipeline and the server both do this; the flag syncs with the dictionary entry. A flagged item is
+resolved with `ReceiptStore.resolveFlaggedItems(_:to:)` (existing category) or `resolveFlaggedItems(_:addingCategory:)` (adds a
+path to the taxonomy, which syncs as `taxonomy_additions`, then files the items there); editing a category the normal way clears the
+flag too. List them with `flaggedItems()` / `flaggedGroups()`, count in `flaggedItemCount`. Contract: `docs/api/receipts.md`, "Flagged categories".
+
 Existing receipts keep their numeric ids locally; migration 7 gives every row the UUID that
 `backend/receipts/migrate_mac_data.py` derives from it (`LegacyIDs`, pinned by tests), so the first
 sync against a migrated server creates no duplicates. Edits are tracked by SQLite triggers
@@ -88,7 +96,7 @@ The sync code lives in `Sources/ReceiptsApp/Sync/` and uses no AppKit; the iPhon
 `ReceiptsiOS` (bundle id `com.robinrossner.receipts`, iOS 17+, iPhone) is the phone front end of the same backend. It
 photographs receipts, the **server** reads them, and the result comes back through sync; there is no AI on the phone
 (no Ollama, no Claude CLI, no API key). It shares `Sources/ReceiptsApp/` with the Mac app (sync engine, SQLite store,
-models, theme, detail/item/overview views; platform differences sit behind `#if os(...)`), and has its own screens in
+models, the photo view; platform differences sit behind `#if os(...)`), and has its own screens and theme in
 `Sources/ReceiptsiOS/`. Files the phone build leaves out are listed under `excludes` in `project.yml`.
 
 - **Setup** (Settings tab): server URL (HTTPS; plain `http://localhost` works in Debug builds only, and Release has no
@@ -98,10 +106,12 @@ models, theme, detail/item/overview views; platform differences sit behind `#if 
   included). Photos are straightened (`DocumentScanner`, falling back to the upright photo when no outline is found),
   converted to JPEG (at most 2500 px, under 4.5 MB), stored in `uploads_outbox/` and uploaded idempotently by receipt
   UUID, so offline captures wait and uploads resume after a relaunch.
-- **Review**: list with search and filters, needs-review first, pull to refresh; detail with Items/Photo tabs, editable
-  header, items, categories, add/delete item, *Looks good* moves on to the next receipt; waiting/reading/failed states with
-  retry (retry on the phone only re-queues the extraction on the server). Overview with the charts, range picker and
-  drill-down. Same colours as the Mac app, with a dark counterpart.
+- **Review**: list with always-visible search, a filter panel, needs-review first with the first reason on the row, a
+  review-count tab badge, pull to refresh, swipe right to confirm and left to delete (both with Undo); detail with
+  Items/Photo tabs, editable header, compact items that expand to their editor (flagged ones start open), add/delete
+  item, *Looks good* moves on to the next receipt; waiting/reading/failed states with retry (retry on the phone only
+  re-queues the extraction on the server). Overview with the charts, range picker and drill-down, `Edit` opens the
+  receipt with that item open. Its own adaptive light and dark palette (`Sources/ReceiptsiOS/Theme.swift`).
 - **Sync** at launch, when the app comes to the foreground, a few seconds after edits, on pull to refresh and every
   15 minutes while open, with the Mac's engine and merge rules. Banners show the server's `archive_overdue` and `disk_warning`.
 - **The phone is not the archive.** It never calls `archive/pending`, `archive-confirm` or `archive/sync` and never
@@ -144,6 +154,10 @@ moves the app's data directory (tests use temp dirs; never the real one).
 
 iPhone: `xcodebuild test -project Receipts.xcodeproj -scheme ReceiptsiOS -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:ReceiptsiOSTests`
 runs the shared unit tests plus the phone's own on the simulator.
+
+`RECEIPTS_MAC_SHOTS=<folder> swift test --filter MacScreensTests` renders the real Mac screens from a temp database, in
+light and dark, to PNGs in a window off screen (no permissions needed). `Tests/ios-e2e/seed_flagged.py` seeds a throwaway
+e2e backend for `FlagFlowTests` (real taps through "Items without a category") and checks afterwards what reached the server.
 
 `Tests/ios-e2e/run.sh [shots_dir]` is the iPhone end-to-end run: the real backend from a temp var dir (dummy token, no
 Claude credentials, extraction finished by `Tests/e2e/seed_extractions.py`) and XCUITests on the `iPhone 17 Pro`

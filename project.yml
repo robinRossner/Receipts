@@ -40,7 +40,8 @@ targets:
     sources:
       - path: Sources/ReceiptsApp
         excludes:
-          # Mac only: app entry, windows, panels, backup (Process), the local AI providers, dictionary editor
+          # Mac only: app entry, windows, panels, backup (Process), the local AI providers, dictionary editor, and the
+          # shared screens the iPhone has its own versions of in Sources/ReceiptsiOS
           - ReceiptsApp.swift
           - Database/BackupService.swift
           - Database/ReceiptStore+Data.swift
@@ -50,12 +51,18 @@ targets:
           - Pipeline/OllamaClient.swift
           - Pipeline/OllamaProcessManager.swift
           - Pipeline/OllamaProvider.swift
+          - Views/CloudSyncViews.swift
           - Views/ContentView.swift
           - Views/DictionaryEditorView.swift
           - Views/ExportSheet.swift
+          - Views/ItemRowView.swift
+          - Views/OverviewCharts.swift
+          - Views/OverviewView.swift
+          - Views/ReceiptDetailView.swift
           - Views/ReceiptListView.swift
           - Views/ReviewView.swift
           - Views/SettingsView.swift
+          - Views/UploadQueueView.swift
           - Views/UploadZoneView.swift
       - path: Sources/ReceiptsiOS
         excludes:
