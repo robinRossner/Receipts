@@ -19,6 +19,9 @@ That's it - this is a normal Xcode App project (not a Swift Package), so it buil
 ask you to pick a signing team for local development - any personal team, or "Sign to Run
 Locally", works fine.
 
+The icon of both apps comes from `docs/app-icons/1-the-slip.svg`; after changing it, run
+`swift docs/app-icons/export-icons.swift` from the repo root to regenerate the PNGs in the two asset catalogs.
+
 (`Package.swift` is still in this folder too, purely so I can keep iterating from the command
 line with `swift build` - you don't need it. Both point at the exact same `Sources/` files.)
 

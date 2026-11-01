@@ -22,8 +22,10 @@ targets:
     platform: macOS
     sources:
       - path: Sources/ReceiptsApp
+      - path: Sources/ReceiptsMacAssets
     settings:
       base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: com.robin.receiptsapp
         PRODUCT_NAME: "$(TARGET_NAME)"
         GENERATE_INFOPLIST_FILE: YES
@@ -70,6 +72,7 @@ targets:
           - Resources/Info-Debug.plist
     settings:
       base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: com.robinrossner.receipts
         PRODUCT_NAME: Receipts
         # The shared tests (@testable import ReceiptsApp) run against the iPhone app unchanged.
@@ -101,6 +104,7 @@ targets:
         excludes:
           - E2ETests.swift            # needs the real backend (Tests/run-e2e.sh, macOS)
           - ClaudeCLIProviderTests.swift
+          - LiveClassificationTests.swift   # uses the Mac-only Claude provider
       - path: Tests/ReceiptsiOSTests
     dependencies:
       - target: ReceiptsiOS
