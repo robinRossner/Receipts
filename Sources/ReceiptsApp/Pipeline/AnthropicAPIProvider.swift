@@ -200,6 +200,6 @@ extension JSONSchema {
             }
             return dict
         }
-        return JSONSchema(name: name, root: clean(root) as? [String: Any] ?? root)
+        return JSONSchema(name: name, root: clean(root) as? [String: Any] ?? root, keyOrder: keyOrder)
     }
 }

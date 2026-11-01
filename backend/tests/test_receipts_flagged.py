@@ -55,35 +55,38 @@ def one(entry: dict, taxonomy=None, name="Hundefutter"):
 # --------------------------------------------------------------------------- prompt and schema
 
 
-def test_prompt_has_the_flagging_rules_and_json_shape():
+def test_prompt_has_the_flagging_rules():
     t = CLASSIFY_PROMPT_TEMPLATE
+    flagging = t.split("<flagging>\n")[1].split("\n</flagging>")[0].splitlines()
+    assert flagging[0] == "Answer in this order:"
+    # 1. a readable name always gets a best guess, never a flag
+    assert flagging[1].startswith("1. Any part of the name is a word you can read")
+    assert "give your most likely group, no_good_match false" in flagging[1]
+    assert "A best guess beats %%FALLBACK%%." in flagging[1]
+    # 2. unreadable: the fallback group, unflagged
+    assert flagging[2] == (
+        "2. No word in the name is readable (codes, letter fragments): path_number %%FALLBACK%%, "
+        "no_good_match false."
+    )
+    # 3. flag only when the product is known and no group fits
+    assert flagging[3].startswith("3. Only if you know what it is and no listed group is where")
     assert (
-        "Below is a numbered list of the ONLY valid categories. For each item pick the single "
-        "number that best matches - never invent a new category and never describe the item in "
-        "that field, just give its number." in t
+        "path_number %%FALLBACK%%, no_good_match true, suggested_category a short English"
+        in (flagging[3])
     )
-    rules = t.split("Rules:\n")[1].split("\n\nRespond")[0].splitlines()
-    assert rules[-3:][0] == "- If genuinely unsure between listed categories, pick the closest one."
-    assert rules[-2] == (
-        "- If you cannot tell what the item is (cryptic or unreadable name), use the number for "
-        '"Other > Miscellaneous > General" and do NOT flag it.'
-    )
-    assert rules[-1].startswith('- Missing category: set "no_good_match" to true ONLY when')
-    assert (
-        'Never choose "Other > Miscellaneous > General" for a product you can identify' in rules[-1]
-    )
-    assert rules[-1].endswith(
-        'When you do not flag, set "no_good_match" to false and both suggestion fields to "".'
-    )
-    assert '"no_good_match": <true only if no listed category is a reasonable home' in t
-    assert '"suggested_category": "<short name of the missing category' in t
-    assert '"suggested_parent": "<Category or Category > Subcategory it would belong under' in t
+    assert "suggested_parent an existing" in flagging[3]
+    assert flagging[4] == "Outside case 3, both suggestion fields are empty."
+    assert "identified: at most 6 English words" in t
+    for placeholder in ("%%STORE_CONTEXT%%", "%%ITEM_LIST%%", "%%TAXONOMY_LIST%%", "%%FALLBACK%%"):
+        assert placeholder in t
+    assert "%%GLOSSARY%%" not in t
 
 
 def test_schema_requires_the_flag_fields():
     entry = classification_schema(2, [1, 2])["properties"]["items"]["items"]
     assert entry["required"] == [
         "index",
+        "identified",
         "translation_en",
         "path_number",
         "no_good_match",

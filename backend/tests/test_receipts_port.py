@@ -10,8 +10,13 @@ from pathlib import Path
 import pytest
 
 from receipts.extraction import fuzzy, prompts
-from receipts.extraction.categorize import classify_with_llm, normalize_name, store_context
-from receipts.extraction.taxonomy import Path3, get_taxonomy
+from receipts.extraction.categorize import (
+    classify_with_llm,
+    fallback_number,
+    normalize_name,
+    store_context,
+)
+from receipts.extraction.taxonomy import FALLBACK_PATH, Path3, get_taxonomy
 from receipts.llm.base import LLMResponse
 from receipts.settings import RECEIPTS_DIR
 from tests.receipts_helpers import path_number
@@ -180,10 +185,7 @@ def test_invalid_numbers_get_one_batched_retry_with_a_correction():
     assert len(provider.prompts) == 2
     assert "Your previous answers for these items were not valid numbers" in provider.prompts[1]
     assert '[1] "Rätsel": you answered 99999' in provider.prompts[1]
-    assert (
-        'Items (German), each with its index in square brackets:\n[1] "Rätsel"'
-        in provider.prompts[1]
-    )
+    assert '<items>\n[1] "Rätsel"\n</items>' in provider.prompts[1]
 
 
 def test_still_invalid_after_the_retry_falls_back_and_is_flagged():
@@ -231,21 +233,68 @@ def test_prompts_are_verbatim_ports_of_the_swift_originals():
         _swift_string(categorizer, "classifyPromptTemplate", raw=False)
         == prompts.CLASSIFY_PROMPT_TEMPLATE
     )
-    assert (
-        _swift_string(categorizer, "abbreviationGlossary", raw=False)
-        == prompts.ABBREVIATION_GLOSSARY
-    )
 
 
 def test_extraction_schema_requires_what_the_prompt_asks_for():
     schema = prompts.extraction_schema()
-    assert schema["required"] == ["store", "date", "time", "items", "total", "printed_item_count"]
-    assert schema["properties"]["items"]["items"]["required"] == [
-        "raw_text",
-        "name",
-        "quantity",
-        "unit_price",
-        "total_price",
+    assert list(schema["properties"]) == [
+        "store",
+        "date",
+        "time",
+        "items",
+        "total",
+        "printed_item_count",
     ]
-    assert "STRICT 1:1 LINE MAPPING" in prompts.EXTRACTION_PROMPT
-    assert prompts.EXTRACTION_PROMPT.rstrip().endswith("no markdown code fences.")
+    assert schema["required"] == ["store", "date", "time", "items", "total", "printed_item_count"]
+    item = schema["properties"]["items"]["items"]
+    assert (
+        item["required"]
+        == list(item["properties"])
+        == [
+            "raw_text",
+            "name",
+            "quantity",
+            "unit_price",
+            "total_price",
+        ]
+    )
+    # the prompt no longer spells the JSON out: it relies on the schema, and says so
+    assert "Extract the purchase into the JSON schema." in prompts.EXTRACTION_PROMPT
+    assert "never choose a digit because it makes the amounts add up" in prompts.EXTRACTION_PROMPT
+    assert prompts.EXTRACTION_PROMPT.rstrip().endswith("sends that receipt to a person for review.")
+
+
+def test_classification_schema_asks_for_the_product_before_the_choice():
+    entry = prompts.classification_schema(2, [5, 7])["properties"]["items"]["items"]
+    assert (
+        list(entry["properties"])
+        == entry["required"]
+        == [
+            "index",
+            "identified",
+            "translation_en",
+            "path_number",
+            "no_good_match",
+            "suggested_category",
+            "suggested_parent",
+        ]
+    )
+    assert entry["properties"]["index"]["enum"] == [1, 2]
+    assert entry["properties"]["path_number"]["enum"] == [5, 7]
+    assert "identified" in prompts.CLASSIFY_PROMPT_TEMPLATE
+
+
+def test_classification_prompt_names_the_real_fallback_number():
+    taxonomy = get_taxonomy().with_additions([Path3("Household", "Pets", "Pet Food")])
+    listing, index = taxonomy.numbered_prompt()
+    fallback = next(n for n, p in index.items() if tuple(p.label.split(" > ")) == FALLBACK_PATH)
+    assert fallback_number(listing) == fallback
+    provider = ScriptedClassifier([[(1, fallback), (2, fallback)]])
+    classify_with_llm(["Xyz", "%%FALLBACK%% Q"], taxonomy, "Edeka", provider)
+    prompt = provider.prompts[0]
+    assert '[2] "%%FALLBACK%% Q"' in prompt  # an item name is never read as a placeholder
+    prompt = prompt.replace('[2] "%%FALLBACK%% Q"', "")
+    assert "%%" not in prompt
+    assert f"path_number {fallback}, no_good_match true" in prompt
+    assert f"{fallback}. Other > Miscellaneous > General" in prompt
+    assert '[1] "Xyz"' in prompt and "purchased at Edeka" in prompt

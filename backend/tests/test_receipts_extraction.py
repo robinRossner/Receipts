@@ -9,6 +9,7 @@ from sqlalchemy import select
 from core.db import utcnow
 from receipts import worker
 from receipts.db.models import ExtractionJob, ItemDictionary, LineItem, Receipt
+from receipts.extraction import prompts
 from receipts.extraction.validate import parse_response, validate_receipt
 from receipts.llm.base import LLMError
 from receipts.settings import get_settings
@@ -79,7 +80,7 @@ def test_extraction_fills_the_receipt_items_and_dictionary(rclient, rdb, rfactor
     # the vision call got the photo bytes and the Mac app's prompt
     call = provider.extract_calls[0]
     assert call["image"] == make_jpeg(1) and call["media_type"] == "image/jpeg"
-    assert call["prompt"].startswith("You are an expert OCR and data extraction AI.")
+    assert call["prompt"] == prompts.EXTRACTION_PROMPT
 
 
 def test_results_reach_clients_through_pull(rclient, rfactory):

@@ -105,3 +105,35 @@ Contract: `docs/api/receipts.md`; runbook: `deploy/README.md`.
   now says: if nothing fits, set `no_good_match` and propose a category, never choose Miscellaneous for a product you can
   identify. A real check at Haiku high (temp DB): common groceries (Milch, Bananen, Spülmittel) never flagged, "Vinzenz E
   Fleisch" was flagged in 2 of 6 runs and otherwise filed under Meat & Fish.
+
+## Combined prompt and the sign check (2026-11-01)
+
+- **One prompt for the Mac and the server.** The extraction prompt is the short one from the variant `a2_minimal`
+  (plain instructions, amounts read one by one, no fitting digits to the sum, the JSON shape left to the output
+  schema) and the classification prompt is the one from `b2_columns` (the model first writes `identified`, at most 6
+  words naming brand and product type, then translates and picks the number; a readable name always gets its best-guess
+  group). Both sit in `backend/receipts/extraction/prompts.py` and in `ReceiptExtractor.swift` /
+  `ItemCategorizer.swift`; a backend test pins the Swift copies to the Python ones. The schemas have no descriptions
+  and list `identified` before `path_number`, as tested; the Mac writes its schema in that property order too
+  (`JSONSchema.keyOrder`) instead of alphabetically. Model and effort are unchanged (Haiku 5.5, high).
+- **What was dropped.** The abbreviation glossary is gone (its entries overlapped test receipts; the prompt has
+  generic rules about shortened German names instead) and so are the old numbered rules and the worked example. The
+  taxonomy notes and the client-added categories are still in the category list, the correction retry for invalid
+  numbers, the fallback-path flag rule and the flag handling are unchanged. New in the prompt: the number of
+  `Other > Miscellaneous > General` is filled in (`%%FALLBACK%%`), because the prompt names it.
+- **Result of the evaluation (combined prompt, Haiku 5.5, high effort).** Unseen set: 53/53 prices right and 96.2% of
+  items in the exact category. Main set: 218/218 prices, 92.2% exact categories. Repeats: 260/260 prices. Degraded
+  photos: 82/85 prices right, every miss flagged for review, 0 receipts wrong without a flag. Usage was 0.97x that of
+  the previous prompt.
+- **Checked on the production code, with real calls** (the harness running the repo's own prompts, parsers and
+  validation; temp copies, no real database): unseen set 53/53 prices, 94.3% exact categories (one item differs from
+  the tested run, within the run-to-run spread); repeats 260/260 prices, 92.7% exact categories (tested: 94.2%).
+- **Limits.** The unseen set is only 8 Edeka receipts, so it says little about other stores. The flag may now fire too
+  rarely: the prompt asks for a best guess for any readable name, so an item that deserves a new category can be filed
+  at an imperfect one without a flag. Degraded photos came out slightly worse than with the previous prompt, but
+  every miss was flagged for review.
+- **Sign check.** A shifted price column keeps the sum right, so `validate_receipt` (Python and Swift, same word
+  tables and tests) also reviews a line whose sign does not fit its name: a positive Leergut / Pfandrueckgabe line, or a
+  negative amount on a product that is not a discount, deposit or refund. The review reasons say "deposit return has a
+  positive amount" or "product has a negative amount" and ask to check whether the price column shifted by a line.
+  Names are matched word by word after folding umlauts, never as substrings.

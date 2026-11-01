@@ -10,10 +10,36 @@ import Foundation
 struct JSONSchema: @unchecked Sendable {  // `root` is an immutable plist-style dictionary.
     let name: String
     let root: [String: Any]
+    /// Keys that `jsonString` writes first, in this order, in every object (all others follow alphabetically). Empty:
+    /// alphabetical. The extraction and classification schemas set `evaluatedKeyOrder`, because the order of their
+    /// properties is the order the model writes its answer in, and the prompts were evaluated in that order.
+    var keyOrder: [String] = []
+
+    /// Property order of the evaluated schemas, the same as in the backend's `extraction_schema()` and `classification_schema()`.
+    static let evaluatedKeyOrder = [
+        "store", "date", "time", "items", "total", "printed_item_count", "raw_text", "name", "quantity", "unit_price", "total_price",
+        "index", "identified", "translation_en", "path_number", "no_good_match", "suggested_category", "suggested_parent",
+    ]
 
     var jsonString: String {
-        (try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        if keyOrder.isEmpty {
+            return (try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        }
+        let rank = Dictionary(keyOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return Self.write(root, rank: rank)
+    }
+
+    private static func write(_ value: Any, rank: [String: Int]) -> String {
+        if let dict = value as? [String: Any] {
+            let keys = dict.keys.sorted { (rank[$0] ?? Int.max, $0) < (rank[$1] ?? Int.max, $1) }
+            return "{" + keys.map { key in write(key, rank: rank) + ":" + write(dict[key] ?? NSNull(), rank: rank) }.joined(separator: ",") + "}"
+        }
+        if let array = value as? [Any] {
+            return "[" + array.map { write($0, rank: rank) }.joined(separator: ",") + "]"
+        }
+        return (try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "null"
     }
 }
 

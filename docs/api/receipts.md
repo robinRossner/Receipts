@@ -94,7 +94,7 @@ Contents: [Conventions](#conventions) · [Concepts](#concepts) · [Data model](#
 | Field | Writable by push | Meaning |
 |---|---|---|
 | `store`, `date`, `time`, `total`, `computed_sum` | yes | the receipt as printed; `date`/`time` may be `null`. After extraction `store` is canonicalised (`"Aldi Süd"`, `"dm"`, ...) or `"Unknown"` |
-| `needs_review`, `review_reasons` | yes | what the validation flagged (texts as in the Mac app: sum mismatch, Pfand correction, "No total found on receipt", "Possible duplicate of receipt <id>", ...); recompute them on the client after editing items, like the Mac app |
+| `needs_review`, `review_reasons` | yes | what the validation flagged (texts as in the Mac app: sum mismatch, Pfand correction, "No total found on receipt", "Possible duplicate of receipt <id>", a line whose sign does not fit its name ("deposit return has a positive amount", "product has a negative amount": a shifted price column keeps the sum right), ...); recompute them on the client after editing items, like the Mac app |
 | `reviewed_at` | yes | **review status**: `null` = not confirmed yet, a timestamp = the user confirmed it. Sidebar order "needs review first" = `reviewed_at == null` first, flag icon = `needs_review` |
 | `created_at` | create only | when the receipt was created (upload: `?created_at=` or server time) |
 | `updated_at`, `deleted_at` | yes | last-write-wins clock and tombstone, see [Sync](#sync) |
@@ -578,7 +578,9 @@ When the extraction LLM knows what an item is but no category of the (merged) ta
 reasonable home, it does not force a poor fit: the dictionary entry is created with
 `category_flagged: true`, the fallback category `Other > Miscellaneous > General`,
 `needs_review: true` and a proposal (`suggested_category`, `suggested_parent`). Unreadable names
-are not flagged (plain fallback, `needs_review`). Flagging is rare, and a proposal that names a
+are not flagged (plain fallback, `needs_review`); a readable name the model files under the fallback anyway is
+flagged, with whatever proposal it gave. The prompt tells the model to give any readable name its most likely
+group, so flags are rare (see `docs/decisions.md`: they may now fire too rarely). Flagging is rare, and a proposal that names a
 path that exists is simply assigned. Exact name / alias hits on a flagged entry return it
 unchanged (no new LLM call); look-alike names (fuzzy match) do not inherit it. One resolution fixes
 every receipt that uses the entry.

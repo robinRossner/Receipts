@@ -25,7 +25,7 @@ enum ItemCategorizer {
         return regex.stringByReplacingMatches(in: s, options: [], range: range, withTemplate: replacement)
     }
 
-    // ---- Store context + abbreviation glossary, copied verbatim from categorize_item.py ----
+    // ---- Store context, copied verbatim from categorize_item.py ----
 
     private static let storeTypeHints: [(match: String, hint: String)] = [
         ("dm", "a German drugstore (mostly personal care, household, and health items)"),
@@ -60,84 +60,66 @@ enum ItemCategorizer {
         return "These items were purchased at \(storeName)."
     }
 
-    private static let abbreviationGlossary = """
-    Common German receipt abbreviations - expand these mentally before translating:
-    - Deo = Deodorant
-    - ToiPa = Toilettenpapier (toilet paper)
-    - Feu. = Feuchtigkeit(s)- (moisture/moisturizing) - NOT "Feuer" (fire)
-    - SH = Shampoo
-    - Duo = pack of 2
-    - LSF = Lichtschutzfaktor (SPF / sun protection factor)
-    - St. = Stück (piece) or Stift (stick)
-    - Rd = Rinder- (beef)
-    - Alkf. = alkoholfrei (non-alcoholic)
-    - Einw. = Einweg (single-use/disposable)
-    - Bio = organic
-    - Bio E.Reg. = organic regional (Bio Eigenmarke Regional) - a label, not the product
-    - Hä. = Hähnchen (chicken)
-    - Zungenreiniger = tongue cleaner
-    - G&G / Gut&Günstig, Ja!, K-Classic, Rewe Beste Wahl = supermarket house brands, not the product type
-    """
-
+    // The evaluated classification prompt (prompt variant b2_columns). Keep it identical to CLASSIFY_PROMPT_TEMPLATE in
+    // backend/receipts/extraction/prompts.py (a backend test compares the two).
     private static let classifyPromptTemplate = """
-    You are classifying German supermarket/drugstore items into a fixed category tree, and translating each item's name to natural English.
+    <task>
+    For each German supermarket or drugstore item, say what it is, translate it to natural English and choose its number from the category list.
+    </task>
 
+    <context>
     %%STORE_CONTEXT%%
+    </context>
 
-    %%GLOSSARY%%
+    <names>
+    Receipt names are cut short and run words together. Expand common German shop shortenings from the rest of the name, and never read a shortened word as an unrelated one that starts the same way. House brands and labels (organic, regional) are not the product type.
+    </names>
 
-    Items (German), each with its index in square brackets:
+    <items>
     %%ITEM_LIST%%
+    </items>
 
-    For each item, first mentally expand any abbreviations or brand names in its name using the glossary above. Then translate what the product actually IS in natural English - not a literal word-for-word translation of the abbreviation.
-
-    Below is a numbered list of the ONLY valid categories. For each item pick the single number that best matches - never invent a new category and never describe the item in that field, just give its number.
-
+    <categories>
     %%TAXONOMY_LIST%%
+    </categories>
 
-    Rules:
-    - Classify by how it is sold and shopped, not strict biology (e.g. tomatoes, cucumbers, zucchini go under Vegetables even though botanically fruits).
-    - Brand names and product-line marketing terms (e.g. "PRO+") don't affect the category - look at what the product actually is, not what it's called.
-    - Classify each item on its own; being on the same receipt says nothing about its category.
-    - Oats (Haferflocken) and muesli are Pantry > Cereals & Muesli, never vegetables.
-    - Baking paper (Backpapier) is a household foil/paper item, not kitchen roll.
-    - If genuinely unsure between listed categories, pick the closest one.
-    - If you cannot tell what the item is (cryptic or unreadable name), use the number for "Other > Miscellaneous > General" and do NOT flag it.
-    - Missing category: set "no_good_match" to true ONLY when you know exactly what the product is and NONE of the listed categories is a reasonable home for it (for example pet food, when the list has no pet category). Never choose "Other > Miscellaneous > General" for a product you can identify: if nothing fits, set "no_good_match" to true and propose the missing category instead. Flagging is rare: the large majority of items, and every common grocery, drugstore or household item, fits a listed category, even if the fit is not perfect. A brand name, an abbreviation, unusual wording or a merely imperfect fit is NOT a reason to flag - choose the closest category instead. When you flag, give the number of "Other > Miscellaneous > General" as path_number and propose the missing category: "suggested_category" is its short name (at most 4 words, English, e.g. "Pet Food") and "suggested_parent" says where it would belong: an existing top-level category (e.g. "Household") or "Category > Subcategory" using existing names (e.g. "Household > Household Goods"); a new subcategory name is allowed. When you do not flag, set "no_good_match" to false and both suggestion fields to "".
+    <fields>
+    - identified: at most 6 English words naming brand and product type, written before choosing, e.g. "house brand: strawberry jam" or "unknown abbreviation". Use what you know about the brand: it tells you the product even when the words do not.
+    - translation_en: what the product is, naturally. Expand an abbreviation only if you are sure of it; otherwise keep the printed word as it stands.
+    - path_number: the group a German shop would sell it under. Follow the form sold: an ice cream brand's product is ice cream whatever flavour the name mentions, tinned or jarred food is not fresh produce, and a spice brand's product is a spice.
+    </fields>
 
-    Respond with ONLY this JSON, no explanation, no markdown fences - exactly one entry per item, using the item's index from the square brackets:
-    {
-      "items": [
-        {
-          "index": <the item's index>,
-          "translation_en": "<natural English translation of what the product actually is>",
-          "path_number": <the single number from the category list above, as an integer>,
-          "no_good_match": <true only if no listed category is a reasonable home for the item, otherwise false>,
-          "suggested_category": "<short name of the missing category if no_good_match is true, otherwise empty string>",
-          "suggested_parent": "<Category or Category > Subcategory it would belong under if no_good_match is true, otherwise empty string>"
-        }
-      ]
-    }
+    <flagging>
+    Answer in this order:
+    1. Any part of the name is a word you can read, or the brand tells you the kind of product: give your most likely group, no_good_match false. A best guess beats %%FALLBACK%%. Every common grocery, drugstore and household item has a group, even an imperfect one.
+    2. No word in the name is readable (codes, letter fragments): path_number %%FALLBACK%%, no_good_match false.
+    3. Only if you know what it is and no listed group is where a shop would sell it, such as fresh flowers, toys, clothing or stationery: path_number %%FALLBACK%%, no_good_match true, suggested_category a short English name of at most 4 words, suggested_parent an existing "Category" or "Category > Subcategory".
+    Outside case 3, both suggestion fields are empty.
+    </flagging>
+
+    Settle each item quickly; do not weigh it at length. Give one entry per item, with index taken from the square brackets.
     """
 
     /// Items per LLM call. A typical receipt fits in one call; this only splits very long ones
     /// so the prompt + answer stay well inside the model's context window.
     static let maxItemsPerCall = 30
 
-    /// Schema for the batched answer: `index` and `path_number` are limited to valid values, so
-    /// providers with constrained output can't return an out-of-range number at all.
+    /// Schema for the batched answer: `index` and `path_number` are limited to valid values, so providers with constrained
+    /// output can't return an out-of-range number at all. The property order is part of the prompt (`identified` before
+    /// `translation_en` and `path_number`), and the evaluated version had no descriptions.
     static func classificationSchema(itemCount: Int, pathNumbers: [Int]) -> JSONSchema {
         let entry: [String: Any] = [
             "type": "object",
             "properties": [
-                "index": ["type": "integer", "enum": Array(1...max(itemCount, 1)), "description": "The item's index from the item list"],
-                "translation_en": ["type": "string", "description": "Natural English translation of what the product actually is"],
-                "path_number": ["type": "integer", "enum": pathNumbers, "description": "Number of the chosen category from the category list"],
-                "no_good_match": ["type": "boolean", "description": "True only if no listed category is a reasonable home for the item"],
-                "suggested_category": ["type": "string", "description": "Short name of the missing category when no_good_match is true, else empty"],
-                "suggested_parent": ["type": "string", "description": "Category or 'Category > Subcategory' it would go under when no_good_match is true, else empty"],
+                "index": ["type": "integer", "enum": Array(1...max(itemCount, 1))],
+                "identified": ["type": "string"],
+                "translation_en": ["type": "string"],
+                "path_number": ["type": "integer", "enum": pathNumbers],
+                "no_good_match": ["type": "boolean"],
+                "suggested_category": ["type": "string"],
+                "suggested_parent": ["type": "string"],
             ] as [String: Any],
-            "required": ["index", "translation_en", "path_number", "no_good_match", "suggested_category", "suggested_parent"],
+            "required": ["index", "identified", "translation_en", "path_number", "no_good_match", "suggested_category", "suggested_parent"],
             "additionalProperties": false,
         ]
         let root: [String: Any] = [
@@ -146,7 +128,18 @@ enum ItemCategorizer {
             "required": ["items"],
             "additionalProperties": false,
         ]
-        return JSONSchema(name: "item_classification", root: root)
+        return JSONSchema(name: "item_classification", root: root, keyOrder: JSONSchema.evaluatedKeyOrder)
+    }
+
+    /// The number of Other > Miscellaneous > General in a numbered taxonomy list; the prompt names it.
+    static func fallbackNumber(inTaxonomyList list: String) -> Int? {
+        let label = [Taxonomy.fallback.category, Taxonomy.fallback.subcategory, Taxonomy.fallback.itemGroup].joined(separator: " > ")
+        for line in list.split(separator: "\n") {
+            guard let dot = line.firstIndex(of: "."), let number = Int(line[line.startIndex..<dot]) else { continue }
+            let rest = line[line.index(after: dot)...].dropFirst()
+            if rest == label || rest.hasPrefix(label + "  (note:") { return number }
+        }
+        return nil
     }
 
     // ---- LLM classification, ported from call_llm() / classify_with_llm(), batched per receipt ----
@@ -225,18 +218,19 @@ enum ItemCategorizer {
         let itemList = itemNames.enumerated()
             .map { "[\($0.offset + 1)] \"\($0.element)\"" }
             .joined(separator: "\n")
+        // The item list goes in last, so an item name that looks like a placeholder is left as it is.
         var prompt = classifyPromptTemplate
-            .replacingOccurrences(of: "%%ITEM_LIST%%", with: itemList)
+            .replacingOccurrences(of: "%%FALLBACK%%", with: String(fallbackNumber(inTaxonomyList: taxonomyList) ?? 0))
             .replacingOccurrences(of: "%%TAXONOMY_LIST%%", with: taxonomyList)
             .replacingOccurrences(of: "%%STORE_CONTEXT%%", with: ctx)
-            .replacingOccurrences(of: "%%GLOSSARY%%", with: abbreviationGlossary)
+            .replacingOccurrences(of: "%%ITEM_LIST%%", with: itemList)
         if !correction.isEmpty {
             prompt += "\n\n\(correction)"
         }
         let response = try await provider.classify(
             prompt: prompt,
             schema: classificationSchema(itemCount: itemNames.count, pathNumbers: pathNumbers),
-            maxOutputTokens: 100 + 80 * itemNames.count
+            maxOutputTokens: 100 + 100 * itemNames.count  // per item: `identified` and the answer fields
         )
         guard let obj = JSONUtil.extractObject(response.text) else { return ([:], response.providerId) }
 

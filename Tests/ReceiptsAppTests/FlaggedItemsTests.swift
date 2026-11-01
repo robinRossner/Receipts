@@ -191,15 +191,40 @@ final class FlaggedItemsTests: XCTestCase {
         let llm = ScriptedClassifier([ScriptedClassifier.answer([(fallbackNumber(), false, "", "")])])
         _ = try await resolve(db, ["Pedigree Hundefutter"], llm)
         let prompt = llm.prompts[0]
-        XCTAssertTrue(prompt.contains("no_good_match"))
-        XCTAssertTrue(prompt.contains("Flagging is rare"))
-        XCTAssertTrue(prompt.contains("a merely imperfect fit is NOT a reason to flag"))
-        XCTAssertTrue(prompt.contains("do NOT flag it"))
-        XCTAssertTrue(prompt.contains(#"Never choose "Other > Miscellaneous > General" for a product you can identify"#))
-        XCTAssertFalse(prompt.contains("If genuinely unsure, use the number"))
+        XCTAssertFalse(prompt.contains("%%"), "every placeholder is filled")
+        XCTAssertTrue(prompt.contains("<flagging>\nAnswer in this order:"))
+        XCTAssertTrue(prompt.contains("give your most likely group, no_good_match false. A best guess beats \(fallbackNumber())."))
+        XCTAssertTrue(prompt.contains("path_number \(fallbackNumber()), no_good_match false.\n3. Only if you know what it is and no listed group is where"))
+        XCTAssertTrue(prompt.contains("path_number \(fallbackNumber()), no_good_match true, suggested_category a short English name"))
+        XCTAssertTrue(prompt.contains("Outside case 3, both suggestion fields are empty."))
+        XCTAssertTrue(prompt.contains("identified: at most 6 English words"))
+        XCTAssertTrue(prompt.contains("\(fallbackNumber()). Other > Miscellaneous > General"))
         let schema = ItemCategorizer.classificationSchema(itemCount: 2, pathNumbers: [1, 2])
         let entry = ((schema.root["properties"] as? [String: Any])?["items"] as? [String: Any])?["items"] as? [String: Any]
-        XCTAssertEqual(entry?["required"] as? [String], ["index", "translation_en", "path_number", "no_good_match", "suggested_category", "suggested_parent"])
+        XCTAssertEqual(entry?["required"] as? [String], ["index", "identified", "translation_en", "path_number", "no_good_match", "suggested_category", "suggested_parent"])
+    }
+
+    func testFallbackNumberIsReadFromTheTaxonomyList() {
+        let (list, index) = taxonomy.numberedPrompt()
+        XCTAssertEqual(ItemCategorizer.fallbackNumber(inTaxonomyList: list), fallbackNumber())
+        XCTAssertEqual(index.count, list.split(separator: "\n").count)
+        XCTAssertNil(ItemCategorizer.fallbackNumber(inTaxonomyList: "1. Food > Pantry > Legumes"))
+    }
+
+    /// The model writes `identified` before it chooses, in the order the schema lists the properties. The CLI schema is
+    /// written in that order, not alphabetically.
+    func testSchemaJSONKeepsTheEvaluatedPropertyOrder() {
+        let json = ItemCategorizer.classificationSchema(itemCount: 2, pathNumbers: [7, 9]).anthropicCompatible().jsonString
+        let order = ["\"index\"", "\"identified\"", "\"translation_en\"", "\"path_number\"", "\"no_good_match\"", "\"suggested_category\"", "\"suggested_parent\""]
+        let positions = order.map { json.range(of: $0 + ":{")!.lowerBound }
+        XCTAssertEqual(positions, positions.sorted())
+        XCTAssertTrue(json.contains("\"path_number\":{\"enum\":[7,9],\"type\":\"integer\"}") || json.contains("\"path_number\":{\"type\":\"integer\",\"enum\":[7,9]}"))
+        let extraction = ReceiptExtractor.outputSchema.jsonString
+        let fields = ["\"store\"", "\"date\"", "\"time\"", "\"items\"", "\"total\"", "\"printed_item_count\""]
+        let at = fields.map { extraction.range(of: $0 + ":{")!.lowerBound }
+        XCTAssertEqual(at, at.sorted())
+        XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(json.utf8)))
+        XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(extraction.utf8)))
     }
 
     // MARK: - The dictionary must not cement a poor match

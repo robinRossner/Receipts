@@ -23,99 +23,36 @@ enum ReceiptExtractor {
     static let knownPfandValues: [Double] = [0.08, 0.15, 0.25, 1.50]
     static let pfandAutocorrectThreshold = 0.10
 
-    // Copied verbatim from scan_and_parse_receipt.py's PROMPT_TEMPLATE so extraction quality/
-    // behavior is unchanged.
+    // The evaluated extraction prompt (prompt variant a2_minimal). Keep it identical to EXTRACTION_PROMPT in
+    // backend/receipts/extraction/prompts.py (a backend test compares the two). It relies on `outputSchema` for the JSON shape.
     static let promptTemplate = #"""
-    You are an expert OCR and data extraction AI. You are looking at a photo of a German supermarket or drugstore receipt (e.g., Aldi, Edeka, dm, Rewe, Lidl).
+    The photo shows a German supermarket or drugstore receipt. Extract the purchase into the JSON schema.
 
-    Extract ONLY the shopping information into this exact JSON structure and nothing else:
+    Items: one entry per amount in the right-hand column, in printed order, from the first item down to the line above SUMME. A repeated product stays as separate entries. Text rows with no amount of their own (a supplier note such as "Z9 Beispiel GmbH", a weight row) belong to the item they describe and take no amount. Photos are often tilted, so match amounts to items by their order in the column, not by which name looks level with them. Read every amount from the photo, even when lines repeat in a pattern.
+    - raw_text: the printed text, uncorrected. name: the German name with OCR typos fixed.
+    - total_price: the printed amount. unit_price: the price of one unit.
+    - quantity: 1 unless a multiplier or weight is printed ("3 x 1,50", "0,500 kg x 3,00 €/kg", giving quantity 3 or 0.5). Pack sizes in a name ("6x250") are not quantities.
+    - Leergut, Rabatt and other refunds: quantity 1 with negative prices. Pfand is its own item and positive unless printed with a minus.
+    - Numbers of 5-8 digits before a name are product codes, not prices.
 
-    {
-      "store": "<store name, e.g. 'Aldi Sud', 'Edeka', 'dm-drogerie markt'>",
-      "date": "<YYYY-MM-DD>",
-      "time": "<HH:MM or null if unclear>",
-      "items": [
-        {
-          "raw_text": "<the original OCR line(s) for this item, uncorrected>",
-          "name": "<your best-guess cleaned-up German item name, fixing obvious OCR typos>",
-          "quantity": <number of units purchased - see rules below>,
-          "unit_price": <price per single unit as a number, e.g. 1.25>,
-          "total_price": <quantity x unit_price, as a number>
-        }
-      ],
-      "total": <the printed total for the whole receipt - always positive - as a number>,
-      "printed_item_count": <the article/item count printed on the receipt, e.g., from "22 Artikel" or "Posten: 9" - as an integer, or null if not visible>
-    }
+    Other fields: store as printed. date as YYYY-MM-DD, time as HH:MM or null if unclear; a TSE timestamp is more legible than the header for the date, but one ending in Z is UTC, so take the time from the printed local clock (its minutes can settle an unclear minute there). total: the amount next to SUMME, positive, never a payment line. printed_item_count: the number at "Posten" or "Artikel", else null.
 
-    CRITICAL RULES - Read carefully. These are the strict boundaries for your extraction:
-
-    1. STRICT 1:1 LINE MAPPING (NO CONSOLIDATING). If the exact same product appears on multiple separate lines on the receipt, you MUST output a separate JSON object for EACH physical line. Do not group, merge, or sum them together just because they are the same item. We need a perfect 1:1 representation of the physical paper.
-
-    2. QUANTITY IS 1 BY DEFAULT. Only output a quantity other than 1 if there is an EXPLICIT multiplier printed on the receipt for that specific item (e.g., a line saying "2 x 0.99", or a weight calculation like "0.804 kg x 1.99"). If a product is just listed multiple times on consecutive lines, keep its quantity as 1 and make multiple item entries.
-
-    3. PACKAGING SIZES ARE NOT QUANTITIES. A number inside a product name (e.g., "2x70" in "Duo Sensitiv2x70") describes the package size as printed on the label (2 packs of 70ml), not how many the customer bought. Ignore these numbers for the quantity field.
-
-    4. WEIGHT-BASED ITEMS usually print a second line below the item showing the calculation, e.g., "0,804 kg x 1,99 €/kg". This belongs to that single item's price calculation. Use it to get that item's quantity (0.804) and unit_price (1.99), and do not let it shift which price belongs to the next item.
-
-    5. QUANTITY IS ALWAYS POSITIVE. Never make quantity negative. For refunds, discounts, or deposit returns (Leergut, Rabatt), keep the quantity positive (usually 1) and make the unit_price and total_price NEGATIVE instead.
-
-    6. PFAND (DEPOSIT) IS POSITIVE when buying a bottle - it's money paid, same sign as any other item. It is only NEGATIVE when explicitly showing a minus sign (e.g., "-0,15" for a return). Pfand is its own separate item row - never merge it into the drink it belongs to. Standard German deposit amounts are 0.08, 0.15, 0.25, or 1.50.
-
-    7. NEVER MERGE TWO DIFFERENT PRODUCTS. If you see two different product names, they are two separate entries, even if you can only find one price nearby. Make your best guess for each rather than combining them.
-
-    8. THE TOTAL comes ONLY from the number next to "SUMME", "SUMME EUR", or "SUMME €". Do NOT use a payment method line (e.g., "VISA EUR", "Geg. Mastercard") even if it shows a similar or negative number. The total you report must always be positive.
-
-    9. PRODUCT CODES ARE NEVER PRICES. Item lines are often prefixed with a 5-8 digit product code (e.g., "205137 Bio Eier"). Never read this code as a price. A price always has exactly 2 decimal places.
-
-    10. PREFER UNAMBIGUOUS DATES. If the receipt shows a timestamp in "YYYY-MM-DD HH:MM:SS" format (often near "Start", "Ende", or "TSE"), use it. It is much more reliable than trying to read a blurry "DD.MM.YYYY" header.
-
-    11. STOP EXTRACTING AT THE TOTAL. The item list ends exactly when you see the subtotal or total (e.g., "SUMME", "ZU ZAHLEN", "BAR", "KARTENZAHLUNG"). NEVER include payment details, change given, or footer metadata like "K-U-N-D-E-N-B-E-L-E-G", "TSE", "MwSt", or "Auf Wiedersehen" as items.
-
-    12. BEWARE OF STUTTERING ON REPEATED ITEMS. If the receipt shows a repetitive pattern (e.g., multiple consecutive lines of the same Beer and Pfand), you must count the EXACT number of physical pairs on the paper. Do not accidentally output 5 pairs if there are only 4 on the receipt. Verify your count against the image before writing the JSON.
-
-    13. EVERY ITEM MUST HAVE A PRICE. If a line of text on the receipt does not have a clear monetary value attached to it, it is not a purchasable product (it is likely a header, description, or footer). Do not extract it as an item.
-
-    WORKED EXAMPLE:
-    Imagine a receipt showing a Cola with an explicit multiplier line ("2 x 0,99" above "400123 Cola 6x1,5L"), followed by two SEPARATE rows of "Pfand" at 0,25 each, a "Leergut" return of -0,50, "Bananen" priced by weight as "0,804 kg x 1,99 €/kg", "Posten: 5", a "Start: 2026-03-01 09:12:00" timestamp, and a total of "SUMME EUR 3,58".
-
-    The correct extraction is:
-
-    {
-      "store": "Example Markt",
-      "date": "2026-03-01",
-      "time": "09:12",
-      "items": [
-        {"raw_text": "2 x 0,99 \n 400123 Cola 6x1,5L", "name": "Cola 6x1,5L", "quantity": 2, "unit_price": 0.99, "total_price": 1.98},
-        {"raw_text": "Pfand 0,25", "name": "Pfand", "quantity": 1, "unit_price": 0.25, "total_price": 0.25},
-        {"raw_text": "Pfand 0,25", "name": "Pfand", "quantity": 1, "unit_price": 0.25, "total_price": 0.25},
-        {"raw_text": "Leergut -0,50", "name": "Leergut", "quantity": 1, "unit_price": -0.50, "total_price": -0.50},
-        {"raw_text": "Bananen / 0,804 kg x 1,99 €/kg", "name": "Bananen", "quantity": 0.804, "unit_price": 1.99, "total_price": 1.60}
-      ],
-      "total": 3.58,
-      "printed_item_count": 5
-    }
-
-    Notice in the example: The Cola received a quantity of 2 because of the explicit "2 x 0,99" multiplier text (Rule 2). The two Pfand items were kept as separate entries with a quantity of 1 because they were separate lines on the receipt (Rule 1).
-
-    Respond with ONLY the JSON object, no explanation, no markdown code fences.
+    Report what is printed. If a digit is hard to read, give your best reading of that digit alone; never choose a digit because it makes the amounts add up. A sum that does not match SUMME is fine: the app sends that receipt to a person for review.
     """#
 
     static let maxOutputTokens = 2048
 
-    /// The JSON structure promptTemplate asks for, as a schema for providers with structured
-    /// output. Nullable where the prompt allows null/unclear values; parsing stays lenient anyway.
+    /// The structure promptTemplate asks for, as a schema for providers with structured output. Nullable where the prompt
+    /// allows null/unclear values; parsing stays lenient anyway. No descriptions: the evaluated version had none.
     static let outputSchema: JSONSchema = {
-        func nullable(_ type: String, _ description: String) -> [String: Any] {
-            ["type": [type, "null"], "description": description]
-        }
         let item: [String: Any] = [
             "type": "object",
             "properties": [
-                "raw_text": ["type": "string", "description": "The original OCR line(s) for this item, uncorrected"],
-                "name": ["type": "string", "description": "Best-guess cleaned-up German item name"],
-                "quantity": ["type": "number", "description": "Units purchased; 1 unless an explicit multiplier or weight is printed"],
-                "unit_price": ["type": "number", "description": "Price per single unit; negative for returns/discounts"],
-                "total_price": ["type": "number", "description": "quantity x unit_price"],
+                "raw_text": ["type": "string"],
+                "name": ["type": "string"],
+                "quantity": ["type": "number"],
+                "unit_price": ["type": "number"],
+                "total_price": ["type": "number"],
             ] as [String: Any],
             "required": ["raw_text", "name", "quantity", "unit_price", "total_price"],
             "additionalProperties": false,
@@ -123,17 +60,17 @@ enum ReceiptExtractor {
         let root: [String: Any] = [
             "type": "object",
             "properties": [
-                "store": nullable("string", "Store name"),
-                "date": nullable("string", "Purchase date, YYYY-MM-DD"),
-                "time": nullable("string", "Purchase time, HH:MM, or null if unclear"),
+                "store": ["type": ["string", "null"]],
+                "date": ["type": ["string", "null"]],
+                "time": ["type": ["string", "null"]],
                 "items": ["type": "array", "items": item] as [String: Any],
-                "total": nullable("number", "Printed SUMME total, always positive"),
-                "printed_item_count": nullable("integer", "Article count printed on the receipt, or null if not visible"),
+                "total": ["type": ["number", "null"]],
+                "printed_item_count": ["type": ["integer", "null"]],
             ] as [String: Any],
             "required": ["store", "date", "time", "items", "total", "printed_item_count"],
             "additionalProperties": false,
         ]
-        return JSONSchema(name: "receipt_extraction", root: root)
+        return JSONSchema(name: "receipt_extraction", root: root, keyOrder: JSONSchema.evaluatedKeyOrder)
     }()
 
     static func callVisionModel(jpeg: Data, provider: any ReceiptExtractionProvider) async throws -> LLMResponse {

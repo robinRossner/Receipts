@@ -35,6 +35,7 @@ By default the Mac app reads receipts through the **Claude connection**: the `cl
 with (Claude Code), with the model hardcoded to `claude-haiku-5-5` at high effort (`ClaudeModel` in
 `Sources/ReceiptsApp/Pipeline/LLMSettings.swift`; why: `docs/decisions.md`). Settings > AI Backend can switch to the Claude
 API, a subscription token, or local Ollama. With Cloud sync on, the server does the reading and uses the same model.
+The extraction and classification prompts and their output schemas are the evaluated versions, kept identical in `backend/receipts/extraction/prompts.py` and the Swift sources (a test compares them); change them only together and with a new evaluation (`docs/decisions.md`).
 
 - Only for the Ollama backend (or as the fallback when Claude fails): [Ollama](https://ollama.com) running locally with:
   - `qwen2.5vl:7b` (receipt photo -> structured data)

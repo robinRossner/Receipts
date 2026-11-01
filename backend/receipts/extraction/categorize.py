@@ -26,7 +26,6 @@ from receipts.db.models import ItemDictionary
 from receipts.extraction import fuzzy
 from receipts.extraction.jsonutil import coerce_int, coerce_str, extract_object
 from receipts.extraction.prompts import (
-    ABBREVIATION_GLOSSARY,
     CLASSIFY_PROMPT_TEMPLATE,
     STORE_TYPE_HINTS,
     classification_schema,
@@ -154,6 +153,19 @@ def sanitize_suggestion(
     return leaf_out, parent_out, existing
 
 
+_FALLBACK_LINE = re.compile(
+    r"^(\d+)\. " + re.escape(" > ".join(FALLBACK_PATH)) + r"(?:  \(note:.*)?$", re.MULTILINE
+)
+
+
+def fallback_number(taxonomy_list: str) -> int:
+    """The number of the fallback path in a numbered taxonomy list; the prompt names it."""
+    m = _FALLBACK_LINE.search(taxonomy_list)
+    if m is None:
+        raise ValueError("the fallback path is not in the taxonomy list")
+    return int(m.group(1))
+
+
 def _call_llm(
     item_names: list[str],
     taxonomy_list: str,
@@ -163,18 +175,19 @@ def _call_llm(
     provider: LLMProvider,
 ) -> tuple[dict[int, _Answer], str]:
     item_list = "\n".join(f'[{i}] "{name}"' for i, name in enumerate(item_names, start=1))
+    # The item list goes in last, so an item name that looks like a placeholder is left as it is.
     prompt = (
-        CLASSIFY_PROMPT_TEMPLATE.replace("%%ITEM_LIST%%", item_list)
+        CLASSIFY_PROMPT_TEMPLATE.replace("%%FALLBACK%%", str(fallback_number(taxonomy_list)))
         .replace("%%TAXONOMY_LIST%%", taxonomy_list)
         .replace("%%STORE_CONTEXT%%", ctx)
-        .replace("%%GLOSSARY%%", ABBREVIATION_GLOSSARY)
+        .replace("%%ITEM_LIST%%", item_list)
     )
     if correction:
         prompt += f"\n\n{correction}"
     response = provider.classify(
         prompt,
         classification_schema(len(item_names), path_numbers),
-        100 + 80 * len(item_names),
+        100 + 100 * len(item_names),  # per item: `identified` and the answer fields
     )
     obj = extract_object(response.text)
     if obj is None:
