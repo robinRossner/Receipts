@@ -87,7 +87,8 @@ Contract: `docs/api/receipts.md`; runbook: `deploy/README.md`.
 ## Model choice and the flag gap (2026-11-01)
 
 - **Haiku 5.5 at high effort, hardcoded.** Picked from a 30-receipt comparison of models and effort levels:
-  29 of 30 receipts read exactly with `claude-haiku-5-5` at `high`; the one miss was the r30-style failure.
+  with `claude-haiku-5-5` at `high`, 29 of 30 receipts were exact in every run. The exception is one Edeka receipt
+  with text lines between items, where prices shift against names: wrong in 5 of 11 runs, 1 of them with no review flag.
   The Mac app hardcodes the pair in one place (`ClaudeModel` in `LLMSettings.swift`: `--model` / `--effort` for the
   CLI backends, `model` / `output_config.effort` for the API; the free-text model fields in Settings are gone) and
   the server defaults to it (`DEFAULT_MODEL`, `DEFAULT_EFFORT` in `backend/receipts/settings.py`; `/status` shows
