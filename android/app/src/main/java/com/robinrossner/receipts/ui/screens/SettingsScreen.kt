@@ -108,7 +108,7 @@ fun SettingsScreen(container: AppContainer) {
                     tokenInput, { tokenInput = it }, "Receipts token", if (hasToken) "Saved (encrypted)" else "Paste the token", "tokenField",
                     KeyboardType.Password, password = true,
                 )
-                urlProblem?.let { Text(it, style = AppTheme.body(12, color = colors.penRed)) }
+                urlProblem?.let { Text(it, style = AppTheme.body(12, color = colors.red)) }
                 InkButton("Save", Modifier.testTag("saveSettingsButton"), enabled = canSave, onClick = ::save)
                 if (hasToken) QuietButton("Remove token and disconnect", Modifier.testTag("disconnectButton"), danger = true) {
                     settings.vault.delete(); hasToken = false; settings.enabled = false; container.coordinator.configure(); result = null
@@ -129,7 +129,7 @@ fun SettingsScreen(container: AppContainer) {
                 result?.let {
                     Text(
                         (if (it.ok) "✓ " else "✕ ") + it.message, Modifier.testTag("testConnectionResult"),
-                        style = AppTheme.body(12, color = if (it.ok) colors.inkSoft else colors.penRed),
+                        style = AppTheme.body(12, color = if (it.ok) colors.inkSoft else colors.red),
                     )
                 }
             }
@@ -147,7 +147,7 @@ fun SettingsScreen(container: AppContainer) {
                     LabelValueRow("Refused by the server") { Text("${sync.rejectedRecords} record(s)", style = AppTheme.body(14, color = colors.ink)) }
                     Text("Edit such a record again to send it again.", style = AppTheme.body(12, color = colors.inkSoft))
                 }
-                sync.lastError?.let { Text(it, style = AppTheme.body(12, color = colors.penRed)) }
+                sync.lastError?.let { Text(it, style = AppTheme.body(12, color = colors.red)) }
                 QuietButton(if (sync.phase == SyncPhase.SYNCING) "Syncing…" else "Sync now", Modifier.testTag("syncNowButton"), enabled = sync.phase != SyncPhase.SYNCING) {
                     scope.launch { container.coordinator.syncNow(); cacheBytes = container.coordinator.photoCacheBytes }
                 }
@@ -173,7 +173,7 @@ fun SettingsScreen(container: AppContainer) {
             TextButton(onClick = {
                 confirmClear = false
                 scope.launch { container.coordinator.clearPhotoCache(); cacheBytes = container.coordinator.photoCacheBytes }
-            }, modifier = Modifier.testTag("confirmClearCache")) { Text("Clear cached photos", color = colors.penRed) }
+            }, modifier = Modifier.testTag("confirmClearCache")) { Text("Clear cached photos", color = colors.red) }
         },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
     )
@@ -207,7 +207,7 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, plac
         shape = RoundedCornerShape(4.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = colors.ink, unfocusedBorderColor = colors.rule, focusedLabelColor = colors.ink, unfocusedLabelColor = colors.inkSoft,
-            focusedContainerColor = colors.card, unfocusedContainerColor = colors.card, cursorColor = colors.ink,
+            focusedContainerColor = colors.field, unfocusedContainerColor = colors.field, cursorColor = colors.ink,
         ),
     )
 }

@@ -67,8 +67,6 @@ import com.robinrossner.receipts.ui.OverviewViewModel
 import com.robinrossner.receipts.ui.RangeMode
 import com.robinrossner.receipts.ui.components.fmtMoney
 import com.robinrossner.receipts.ui.theme.AppTheme
-import com.robinrossner.receipts.ui.theme.ChartOther
-import com.robinrossner.receipts.ui.theme.ChartPalette
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -79,7 +77,7 @@ import java.util.Locale
 /** Month navigator, running total, spending charts and the expandable category > subcategory > item group tree with a purchase drill-down. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OverviewScreen(vm: OverviewViewModel, onOpenReceipt: (String) -> Unit) {
+fun OverviewScreen(vm: OverviewViewModel, onOpenReceipt: (uuid: String, itemDictionaryId: String?) -> Unit, onOpenFlagged: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val colors = AppTheme.colors
     Scaffold(
@@ -97,7 +95,7 @@ fun OverviewScreen(vm: OverviewViewModel, onOpenReceipt: (String) -> Unit) {
             RangeHeader(vm, ui)
             Text("Total: ${fmtMoney(ui.summary?.total)}", Modifier.fillMaxWidth().testTag("overviewTotal"), style = AppTheme.mono(22, color = colors.ink), textAlign = TextAlign.Center)
             SpendingCharts(ui.monthly, ui.stores, ui.highlightMonth, ui.mode, ui.cursor)
-            CategoryTree(vm, ui, onOpenReceipt)
+            CategoryTree(vm, ui) { onOpenReceipt(it, null) }
         }
     }
 }
@@ -169,7 +167,7 @@ private fun NavButton(symbol: String, description: String, onClick: () -> Unit) 
 private fun SpendingCharts(monthly: List<MonthCategoryTotal>, stores: List<StoreTotal>, highlightMonth: String?, mode: RangeMode, cursor: LocalDate) {
     if (monthly.isEmpty() && stores.isEmpty()) return
     val series = StatsCalc.seriesNames(monthly)
-    val colors = series.mapIndexed { i, n -> if (n == StatsCalc.OTHER) ChartOther else ChartPalette[i % ChartPalette.size] }
+    val colors = series.mapIndexed { i, n -> if (n == StatsCalc.OTHER) AppTheme.colors.seriesOther else AppTheme.colors.series[i % AppTheme.colors.series.size] }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         ChartCard("Spending by month") {
             StackedBars(monthly, series, colors, highlightMonth, if (mode == RangeMode.MONTH) cursor else null)
@@ -294,7 +292,7 @@ private fun PriceHistoryChart(points: List<PricePoint>) {
     val c = AppTheme.colors
     val measurer = rememberTextMeasurer()
     val names = points.map { it.item }.distinct().sorted()
-    val colors = names.indices.map { ChartPalette[it % ChartPalette.size] }
+    val colors = names.indices.map { c.series[it % c.series.size] }
     val minDate = points.minOf { it.date }.toEpochDay()
     val maxDate = points.maxOf { it.date }.toEpochDay().coerceAtLeast(minDate + 1)
     val maxPrice = points.maxOf { it.unitPrice }
@@ -364,12 +362,12 @@ private fun CategoryTree(vm: OverviewViewModel, ui: OverviewUi, onOpenReceipt: (
 @Composable
 private fun TreeRow(label: String, total: Double, depth: Int, open: Boolean, previous: Double?, hasPrevious: Boolean, previousLabel: String, onClick: () -> Unit) {
     val c = AppTheme.colors
-    val bg = when (depth) { 0 -> c.paper; 1 -> c.treeLevel1; else -> c.treeLevel2 }
+    val bg = c.paper
     val delta = if (depth < 2) StatsCalc.deltaText(total, previous, hasPrevious, previousLabel) else null
     val deltaColor = when {
         previous == null || previous <= 0 -> c.inkSoft
-        total > previous -> c.penRed
-        total < previous -> c.stampGreen
+        total > previous -> c.red
+        total < previous -> c.green
         else -> c.inkSoft
     }
     Row(
@@ -393,7 +391,7 @@ private fun Purchases(ui: OverviewUi, key: String, onOpenReceipt: (String) -> Un
             key in ui.loadingGroups || detail == null -> Text("Loading…", style = AppTheme.body(13, color = c.inkSoft))
             detail.purchases.isEmpty() -> Text("No purchases found.", style = AppTheme.body(13, color = c.inkSoft))
             else -> Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(c.card).border(1.dp, c.rule, RoundedCornerShape(4.dp)).padding(10.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(c.field).border(1.dp, c.rule, RoundedCornerShape(4.dp)).padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (detail.history.size > 1) PriceHistoryChart(detail.history)

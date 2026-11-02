@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.robinrossner.receipts.AppContainer
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.robinrossner.receipts.ReceiptsApp
 import com.robinrossner.receipts.data.Rules
 import com.robinrossner.receipts.data.db.ItemRow
@@ -51,7 +52,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun ItemCard(vm: DetailViewModel, item: ItemRow) {
     val colors = AppTheme.colors
-    val taxonomy = (LocalContext.current.applicationContext as ReceiptsApp).container.taxonomy
+    val taxonomy by (LocalContext.current.applicationContext as ReceiptsApp).container.repository.taxonomy.collectAsStateWithLifecycle()
     var qty by remember(item.uuid, item.quantity) { mutableStateOf(trimmedNumber(item.quantity)) }
     var price by remember(item.uuid, item.unitPrice) { mutableStateOf(String.format(java.util.Locale.US, "%.2f", item.unitPrice)) }
     var translation by remember(item.uuid, item.translationEn) { mutableStateOf(item.translationEn.orEmpty()) }
@@ -69,7 +70,7 @@ fun ItemCard(vm: DetailViewModel, item: ItemRow) {
     LaunchedEffect(state) { if (state == SaveState.FAILED || state == SaveState.SAVED) { delay(1800); state = SaveState.IDLE } }
 
     Column(
-        Modifier.fillMaxWidth().let { if (item.dictNeedsReview) it.clip(RoundedCornerShape(4.dp)).background(colors.penRedBg).padding(10.dp) else it },
+        Modifier.fillMaxWidth().let { if (item.dictNeedsReview) it.clip(RoundedCornerShape(4.dp)).background(colors.redBg).padding(10.dp) else it },
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(item.nameDe.orEmpty(), style = AppTheme.body(14, FontWeight.SemiBold, colors.ink))

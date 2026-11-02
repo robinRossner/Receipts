@@ -1,17 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A receipt: paper strip with a zigzag bottom edge and three ink lines. -->
+<!-- The Slip (docs/app-icons/1-the-slip.svg), foreground layer. Same 1024 units as the SVG; scaled to 70% so the slip sits inside the 66dp safe circle. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,22 L78,22 L78,84 L72,79 L66,84 L60,79 L54,84 L48,79 L42,84 L36,79 L30,84 Z" />
-    <path
-        android:fillColor="#2B2823"
-        android:pathData="M37,32 L71,32 L71,35 L37,35 Z M37,42 L62,42 L62,45 L37,45 Z M37,52 L71,52 L71,55 L37,55 Z M37,62 L55,62 L55,65 L37,65 Z" />
-    <path
-        android:fillColor="#B33A3A"
-        android:pathData="M58,60 L71,60 L71,67 L58,67 Z" />
+    android:width="108dp" android:height="108dp" android:viewportWidth="1024" android:viewportHeight="1024">
+    <group android:pivotX="512" android:pivotY="495" android:scaleX="0.70" android:scaleY="0.70" android:translateY="17">
+        <group android:pivotX="512" android:pivotY="512" android:rotation="-6">
+            <group android:translateY="20">
+                <path android:fillColor="#000000" android:fillAlpha="0.35" android:pathData="M282,110H742V850L716.444,880L690.889,850L665.333,880L639.778,850L614.222,880L588.667,850L563.111,880L537.556,850L512,880L486.444,850L460.889,880L435.333,850L409.778,880L384.222,850L358.667,880L333.111,850L307.556,880L282,850Z" />
+            </group>
+            <path android:fillColor="#FAF7EE" android:pathData="M282,110H742V850L716.444,880L690.889,850L665.333,880L639.778,850L614.222,880L588.667,850L563.111,880L537.556,850L512,880L486.444,850L460.889,880L435.333,850L409.778,880L384.222,850L358.667,880L333.111,850L307.556,880L282,850Z" />
+            <path android:fillColor="#2B2823" android:pathData="M412,180H612A20,20 0 0 1 612,220H412A20,20 0 0 1 412,180ZM360,660H440A20,20 0 0 1 440,700H360A20,20 0 0 1 360,660ZM562,660H634A20,20 0 0 1 634,700H562A20,20 0 0 1 562,660ZM340,567h20v10h-20ZM376,567h20v10h-20ZM412,567h20v10h-20ZM448,567h20v10h-20ZM484,567h20v10h-20ZM520,567h20v10h-20ZM556,567h20v10h-20ZM592,567h20v10h-20ZM628,567h20v10h-20ZM664,567h20v10h-20Z" />
+            <path android:fillColor="#665F53" android:pathData="M352,280H504A12,12 0 0 1 504,304H352A12,12 0 0 1 352,280ZM634,280H672A12,12 0 0 1 672,304H634A12,12 0 0 1 634,280ZM352,348H464A12,12 0 0 1 464,372H352A12,12 0 0 1 352,348ZM634,348H672A12,12 0 0 1 672,372H634A12,12 0 0 1 634,348ZM352,416H524A12,12 0 0 1 524,440H352A12,12 0 0 1 352,416ZM634,416H672A12,12 0 0 1 672,440H634A12,12 0 0 1 634,416ZM352,484H478A12,12 0 0 1 478,508H352A12,12 0 0 1 352,484ZM634,484H672A12,12 0 0 1 672,508H634A12,12 0 0 1 634,484Z" />
+            <path android:strokeColor="#B33A3A" android:strokeWidth="22" android:strokeLineCap="round" android:pathData="M520,640C566,596 668,598 700,640C732,684 686,736 604,736C528,736 478,692 510,644C528,618 574,600 622,606" />
+        </group>
+    </group>
 </vector>

@@ -119,7 +119,7 @@ import java.time.ZoneOffset
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReceiptDetailScreen(
-    container: AppContainer, vm: DetailViewModel, list: ListUi, onBack: () -> Unit, onNext: (String) -> Unit,
+    container: AppContainer, vm: DetailViewModel, list: ListUi, onBack: () -> Unit, onNext: (String) -> Unit, highlightItemId: String? = null,
 ) {
     val receipt by vm.receipt.collectAsStateWithLifecycle()
     val items by vm.items.collectAsStateWithLifecycle()
@@ -164,8 +164,8 @@ fun ReceiptDetailScreen(
                         shape = RoundedCornerShape(4.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 30.dp, vertical = 11.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = colors.stampGreen, contentColor = Color.White,
-                            disabledContainerColor = colors.stampGreen.copy(alpha = 0.55f), disabledContentColor = Color.White,
+                            containerColor = colors.green, contentColor = Color.White,
+                            disabledContainerColor = colors.green.copy(alpha = 0.55f), disabledContentColor = Color.White,
                         ),
                     ) { Text(if (reviewed) "Reviewed ✓" else "Looks good", style = AppTheme.body(14, FontWeight.SemiBold)) }
                     Spacer(Modifier.weight(1f))
@@ -176,7 +176,7 @@ fun ReceiptDetailScreen(
                             if (r.photoLocation == "server" && r.processing == null) {
                                 DropdownMenuItem(text = { Text("Re-run extraction…") }, onClick = { menu = false; confirmRerun = true })
                             }
-                            DropdownMenuItem(text = { Text("Delete receipt…", color = colors.penRed) }, onClick = { menu = false; confirmDelete = true })
+                            DropdownMenuItem(text = { Text("Delete receipt…", color = colors.red) }, onClick = { menu = false; confirmDelete = true })
                         }
                     }
                 }
@@ -207,14 +207,14 @@ fun ReceiptDetailScreen(
         onDismissRequest = { confirmDelete = false },
         title = { Text("Delete this receipt?") },
         text = { Text("It moves to “Recently deleted” and can be restored from there.") },
-        confirmButton = { TextButton(onClick = { confirmDelete = false; vm.deleteReceipt() }) { Text("Delete", color = colors.penRed) } },
+        confirmButton = { TextButton(onClick = { confirmDelete = false; vm.deleteReceipt() }) { Text("Delete", color = colors.red) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
     )
     if (confirmRerun) AlertDialog(
         onDismissRequest = { confirmRerun = false },
         title = { Text("Re-run extraction?") },
         text = { Text("The server reads the photo again and marks the receipt as not yet reviewed. If you already edited or confirmed this receipt, the server keeps your version.") },
-        confirmButton = { TextButton(onClick = { confirmRerun = false; vm.retryExtraction { error = it } }) { Text("Re-run extraction", color = colors.penRed) } },
+        confirmButton = { TextButton(onClick = { confirmRerun = false; vm.retryExtraction { error = it } }) { Text("Re-run extraction", color = colors.red) } },
         dismissButton = { TextButton(onClick = { confirmRerun = false }) { Text("Cancel") } },
     )
 }
@@ -229,10 +229,10 @@ private fun ItemsPane(vm: DetailViewModel, r: ReceiptEntity, items: List<ItemRow
         Paper(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 r.processing?.let { ProcessingPanel(vm, r, it) }
-                error?.let { PenBox { Text(it, style = AppTheme.body(13, color = colors.penRed)) } }
+                error?.let { PenBox { Text(it, style = AppTheme.body(13, color = colors.red)) } }
                 Header(vm, r)
                 if (r.needsReview && reasons.isNotEmpty()) PenBox {
-                    reasons.forEach { Text("⚠ $it", style = AppTheme.body(13, color = colors.penRed)) }
+                    reasons.forEach { Text("⚠ $it", style = AppTheme.body(13, color = colors.red)) }
                 }
                 HorizontalDivider(color = colors.rule.copy(alpha = 0.6f))
                 // The same product twice stays two rows, bracketed with "2×" like the Mac app.
@@ -376,7 +376,7 @@ private fun AddItemSection(vm: DetailViewModel, startOpen: Boolean) {
                 SmallField(price, { price = it }, "Price €", Modifier.width(80.dp), decimal = true)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                error?.let { Text(it, Modifier.weight(1f), style = AppTheme.body(12, color = colors.penRed)) } ?: Spacer(Modifier.weight(1f))
+                error?.let { Text(it, Modifier.weight(1f), style = AppTheme.body(12, color = colors.red)) } ?: Spacer(Modifier.weight(1f))
                 QuietButton("Add", Modifier.testTag("addItemButton")) {
                     val p = parseDecimal(price)
                     if (name.isBlank() || p == null) { error = "Enter an item name and a price." } else {
@@ -400,7 +400,7 @@ internal fun SmallField(value: String, onChange: (String) -> Unit, label: String
         keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Text),
         shape = RoundedCornerShape(4.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = colors.ink, unfocusedBorderColor = colors.rule, focusedContainerColor = colors.card, unfocusedContainerColor = colors.card,
+            focusedBorderColor = colors.ink, unfocusedBorderColor = colors.rule, focusedContainerColor = colors.field, unfocusedContainerColor = colors.field,
         ),
     )
 }
@@ -427,7 +427,7 @@ private fun Totals(vm: DetailViewModel, r: ReceiptEntity) {
             keyboardActions = KeyboardActions(onDone = { commit(); focus.clearFocus() }),
             shape = RoundedCornerShape(4.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = colors.ink, unfocusedBorderColor = colors.rule, focusedContainerColor = colors.card, unfocusedContainerColor = colors.card,
+                focusedBorderColor = colors.ink, unfocusedBorderColor = colors.rule, focusedContainerColor = colors.field, unfocusedContainerColor = colors.field,
             ),
         )
     }
@@ -436,15 +436,15 @@ private fun Totals(vm: DetailViewModel, r: ReceiptEntity) {
 @Composable
 private fun ProcessingPanel(vm: DetailViewModel, r: ReceiptEntity, p: Processing) {
     val colors = AppTheme.colors
-    val body = AppTheme.body(12, color = if (p.isActive) colors.ink else colors.penRed)
+    val body = AppTheme.body(12, color = if (p.isActive) colors.ink else colors.red)
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(colors.penRedBg.copy(alpha = if (p.isActive) 0.5f else 1f))
-            .border(1.dp, if (p.isActive) colors.rule else colors.penRed, RoundedCornerShape(4.dp)).padding(12.dp).testTag("processingPanel"),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(colors.redBg.copy(alpha = if (p.isActive) 0.5f else 1f))
+            .border(1.dp, if (p.isActive) colors.rule else colors.red, RoundedCornerShape(4.dp)).padding(12.dp).testTag("processingPanel"),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (p.isActive) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp, color = colors.ink)
-            Text(p.label, style = AppTheme.body(13, FontWeight.SemiBold, if (p.isActive) colors.ink else colors.penRed))
+            Text(p.label, style = AppTheme.body(13, FontWeight.SemiBold, if (p.isActive) colors.ink else colors.red))
         }
         when (p) {
             is Processing.WaitingForUpload ->

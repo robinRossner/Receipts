@@ -162,7 +162,7 @@ fun ReceiptListScreen(container: AppContainer, vm: ListViewModel, onOpen: (Strin
                 navigationIcon = {
                     Box {
                         IconButton(onClick = { filterMenu = true }, modifier = Modifier.testTag("filtersMenu")) {
-                            Icon(Icons.Default.FilterList, contentDescription = "Filters", tint = if (ui.isFiltering) colors.penRed else colors.ink)
+                            Icon(Icons.Default.FilterList, contentDescription = "Filters", tint = if (ui.isFiltering) colors.red else colors.ink)
                         }
                         DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }) {
                             Text("Date", Modifier.padding(horizontal = 16.dp, vertical = 4.dp), style = AppTheme.body(11, color = colors.inkSoft))
@@ -251,7 +251,7 @@ fun ReceiptListScreen(container: AppContainer, vm: ListViewModel, onOpen: (Strin
                                                 Text("${r.date ?: ""} · ${fmtMoney(r.total)}", style = AppTheme.mono(11, color = colors.inkSoft))
                                             }
                                             TextButton(onClick = { vm.restore(r.uuid) }) { Text("Restore", color = colors.ink) }
-                                            TextButton(onClick = { pendingPurge = r }) { Text("Delete", color = colors.penRed) }
+                                            TextButton(onClick = { pendingPurge = r }) { Text("Delete", color = colors.red) }
                                         }
                                     }
                                 }
@@ -275,7 +275,7 @@ fun ReceiptListScreen(container: AppContainer, vm: ListViewModel, onOpen: (Strin
             onDismissRequest = { pendingPurge = null },
             title = { Text("Permanently delete this receipt?") },
             text = { Text("This removes the receipt, its items and the photo copy on this phone. It cannot be undone.") },
-            confirmButton = { TextButton(onClick = { vm.purge(r.uuid); pendingPurge = null }) { Text("Delete permanently", color = colors.penRed) } },
+            confirmButton = { TextButton(onClick = { vm.purge(r.uuid); pendingPurge = null }) { Text("Delete permanently", color = colors.red) } },
             dismissButton = { TextButton(onClick = { pendingPurge = null }) { Text("Cancel") } },
         )
     }
@@ -292,7 +292,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
             if (badge != null && badge > 0) {
                 Text(
                     "$badge to review",
-                    Modifier.background(AppTheme.colors.penRed, CircleShape).padding(horizontal = 8.dp, vertical = 2.dp),
+                    Modifier.background(AppTheme.colors.red, CircleShape).padding(horizontal = 8.dp, vertical = 2.dp),
                     style = AppTheme.body(11, FontWeight.Medium, Color.White),
                 )
             }
@@ -310,7 +310,7 @@ private fun SwipeableRow(r: ReceiptSummary, onOpen: (String) -> Unit, onDelete: 
     SwipeToDismissBox(
         state = state, enableDismissFromStartToEnd = false,
         backgroundContent = {
-            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp)).background(AppTheme.colors.penRed).padding(end = 16.dp), contentAlignment = Alignment.CenterEnd) {
+            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp)).background(AppTheme.colors.red).padding(end = 16.dp), contentAlignment = Alignment.CenterEnd) {
                 Text("Delete", style = AppTheme.body(13, FontWeight.Medium, Color.White))
             }
         },
@@ -330,7 +330,7 @@ private fun ReceiptRow(r: ReceiptSummary, onClick: () -> Unit) {
                     if (processing != null) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (processing.isActive) CircularProgressIndicator(Modifier.size(11.dp), strokeWidth = 1.5.dp, color = colors.inkSoft)
-                            Text(processing.label, style = AppTheme.body(12, color = if (processing.isActive) colors.inkSoft else colors.penRed))
+                            Text(processing.label, style = AppTheme.body(12, color = if (processing.isActive) colors.inkSoft else colors.red))
                         }
                     } else {
                         Text(r.date ?: "", style = AppTheme.mono(12, color = colors.inkSoft))
@@ -338,8 +338,8 @@ private fun ReceiptRow(r: ReceiptSummary, onClick: () -> Unit) {
                 }
                 if (processing == null || r.total != null) Text(fmtMoney(r.total), style = AppTheme.mono(14, color = colors.ink))
             }
-            if (unreviewed) Box(Modifier.width(3.dp).fillMaxHeight().background(colors.penRed).align(Alignment.CenterStart))
-            if (r.needsReview) Text("⚠", Modifier.align(Alignment.TopEnd).padding(5.dp), style = AppTheme.body(11, color = colors.penRed))
+            if (unreviewed) Box(Modifier.width(3.dp).fillMaxHeight().background(colors.red).align(Alignment.CenterStart))
+            if (r.needsReview) Text("⚠", Modifier.align(Alignment.TopEnd).padding(5.dp), style = AppTheme.body(11, color = colors.red))
         }
     }
 }
@@ -377,7 +377,7 @@ private fun SyncStatusRow(container: AppContainer) {
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (sync.phase == SyncPhase.SYNCING) CircularProgressIndicator(Modifier.size(11.dp), strokeWidth = 1.5.dp, color = colors.inkSoft)
-        Text(text, Modifier.testTag("syncStatus"), style = AppTheme.body(11, color = if (sync.lastError != null) colors.penRed else colors.inkSoft))
+        Text(text, Modifier.testTag("syncStatus"), style = AppTheme.body(11, color = if (sync.lastError != null) colors.red else colors.inkSoft))
         Icon(
             Icons.Default.Sync, "Sync now",
             Modifier.size(14.dp).clickable(enabled = sync.phase != SyncPhase.SYNCING) { container.scope.launch { container.coordinator.syncNow() } },
@@ -396,7 +396,7 @@ private fun UploadQueue(container: AppContainer, jobs: List<ImportJob>, onOpen: 
             Spacer(Modifier.weight(1f))
             TextButton(onClick = { container.importer.clearFinished() }) { Text("Clear finished", style = AppTheme.body(11, color = colors.inkSoft)) }
         }
-        LinearProgressIndicator(progress = { finished.toFloat() / jobs.size.coerceAtLeast(1) }, Modifier.fillMaxWidth(), color = colors.penRed, trackColor = colors.rule)
+        LinearProgressIndicator(progress = { finished.toFloat() / jobs.size.coerceAtLeast(1) }, Modifier.fillMaxWidth(), color = colors.red, trackColor = colors.rule)
         jobs.forEach { job ->
             val (text, failed) = when (val s = job.state) {
                 ImportJob.State.Queued -> "Waiting" to false
@@ -411,10 +411,10 @@ private fun UploadQueue(container: AppContainer, jobs: List<ImportJob>, onOpen: 
                 horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top,
             ) {
                 if (!job.finished) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp, color = colors.inkSoft)
-                else Text(if (failed) "⚠" else "✓", style = AppTheme.body(12, color = if (failed) colors.penRed else colors.ink))
+                else Text(if (failed) "⚠" else "✓", style = AppTheme.body(12, color = if (failed) colors.red else colors.ink))
                 Column(Modifier.weight(1f)) {
                     Text(job.name, maxLines = 1, style = AppTheme.body(12, color = colors.ink))
-                    Text(text, style = AppTheme.body(11, color = if (failed) colors.penRed else colors.inkSoft))
+                    Text(text, style = AppTheme.body(11, color = if (failed) colors.red else colors.inkSoft))
                 }
             }
         }
