@@ -1,37 +1,55 @@
 package com.robinrossner.receipts.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Dangerous
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.NetworkCheck
+import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.robinrossner.receipts.AppContainer
 import com.robinrossner.receipts.BuildConfig
@@ -39,13 +57,20 @@ import com.robinrossner.receipts.data.api.ServerUrl
 import com.robinrossner.receipts.data.api.SyncCapabilities
 import com.robinrossner.receipts.data.sync.ConnectionTest
 import com.robinrossner.receipts.data.sync.SyncPhase
-import com.robinrossner.receipts.ui.components.InkButton
-import com.robinrossner.receipts.ui.components.LabelValueRow
-import com.robinrossner.receipts.ui.components.Paper
-import com.robinrossner.receipts.ui.components.QuietButton
+import com.robinrossner.receipts.ui.components.AppConfirmDialog
+import com.robinrossner.receipts.ui.components.AppTextField
+import com.robinrossner.receipts.ui.components.AppTopBar
+import com.robinrossner.receipts.ui.components.MiniSpinner
+import com.robinrossner.receipts.ui.components.NoteBox
+import com.robinrossner.receipts.ui.components.RuleDivider
 import com.robinrossner.receipts.ui.components.SectionLabel
+import com.robinrossner.receipts.ui.components.formatFileSize
+import com.robinrossner.receipts.ui.settings.SettingsLogic
+import com.robinrossner.receipts.ui.settings.dismissKeyboardOnDrag
 import com.robinrossner.receipts.ui.theme.AppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
@@ -53,12 +78,12 @@ import java.util.Date
  * Setup and status: the server address and the receipts token (kept encrypted with the Android Keystore), a connection
  * test, sync status and the photo cache. Cloud only: there are no AI settings on the phone.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(container: AppContainer) {
     val colors = AppTheme.colors
     val settings = container.settings
-    val sync by container.coordinator.state.collectAsStateWithLifecycle()
+    val coordinator = container.coordinator
+    val sync by coordinator.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     var url by remember { mutableStateOf(settings.serverUrl) }
@@ -66,148 +91,256 @@ fun SettingsScreen(container: AppContainer) {
     var hasToken by remember { mutableStateOf(settings.vault.contains()) }
     var testing by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<ConnectionTest?>(null) }
-    var cacheBytes by remember { mutableLongStateOf(container.coordinator.photoCacheBytes) }
+    var cacheBytes by remember { mutableLongStateOf(0L) }
     var confirmClear by remember { mutableStateOf(false) }
 
     val urlValid = ServerUrl.apiBase(url, BuildConfig.DEBUG) != null
-    val urlProblem = if (url.isNotBlank() && !urlValid) {
-        if (BuildConfig.DEBUG) "Not a valid address. Use https://… (plain http:// works for the emulator host 10.0.2.2 and localhost in debug builds only)."
-        else "Not a valid address. Use https://…"
-    } else null
+    val urlProblem = SettingsLogic.urlProblem(url, urlValid, BuildConfig.DEBUG)
     val typedToken = tokenInput.trim()
-    val canSave = urlValid && (hasToken || typedToken.isNotEmpty())
+    val canSave = SettingsLogic.canSave(urlValid, hasToken, typedToken)
+
+    suspend fun refreshCache() { cacheBytes = withContext(Dispatchers.IO) { coordinator.photoCacheBytes } }
+
+    // The cache size is read on appear and whenever the sync changes phase; a finished sync also ends the "Saved. Syncing…" note.
+    LaunchedEffect(sync.phase) {
+        refreshCache()
+        if (SettingsLogic.clearSavedNote(result?.message, sync.phase == SyncPhase.IDLE)) result = null
+    }
 
     fun save() {
         focus.clearFocus()
-        settings.serverUrl = url
+        settings.serverUrl = url.trim()
         if (typedToken.isNotEmpty()) {
             if (!settings.vault.save(typedToken)) { result = ConnectionTest(false, "The token could not be stored in the Android Keystore."); return }
             tokenInput = ""
         }
         hasToken = settings.vault.contains()
         settings.enabled = true   // cloud only: saving the server turns sync on
-        container.coordinator.configure()
-        result = ConnectionTest(true, "Saved. Syncing…")
+        coordinator.configure()
+        result = ConnectionTest(true, SettingsLogic.SAVED_NOTE)
     }
 
-    Scaffold(
-        containerColor = colors.desk,
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Settings", style = AppTheme.display(20.sp, colors.ink)) },
-                windowInsets = androidx.compose.foundation.layout.WindowInsets(0),
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = colors.paper),
-            )
-        },
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Section("Server", "Your own receipts backend. Photos are sent there and read by it; this phone has no AI of its own. The token is stored encrypted with the Android Keystore.") {
-                Field(url, { url = it }, "Server URL", "https://receipts.example.com", "serverUrlField", KeyboardType.Uri)
-                Field(
-                    tokenInput, { tokenInput = it }, "Receipts token", if (hasToken) "Saved (encrypted)" else "Paste the token", "tokenField",
-                    KeyboardType.Password, password = true,
-                )
-                urlProblem?.let { Text(it, style = AppTheme.body(12, color = colors.red)) }
-                InkButton("Save", Modifier.testTag("saveSettingsButton"), enabled = canSave, onClick = ::save)
-                if (hasToken) QuietButton("Remove token and disconnect", Modifier.testTag("disconnectButton"), danger = true) {
-                    settings.vault.delete(); hasToken = false; settings.enabled = false; container.coordinator.configure(); result = null
-                }
-            }
-            Section(null, null) {
-                QuietButton(
-                    if (testing) "Testing…" else "Test connection", Modifier.testTag("testConnectionButton"),
-                    enabled = !testing && urlValid && (hasToken || typedToken.isNotEmpty()),
-                ) {
-                    focus.clearFocus()
-                    testing = true
-                    scope.launch {
-                        result = container.coordinator.testConnection(url, typedToken.ifEmpty { settings.vault.read() })
-                        testing = false
-                    }
-                }
-                result?.let {
-                    Text(
-                        (if (it.ok) "✓ " else "✕ ") + it.message, Modifier.testTag("testConnectionResult"),
-                        style = AppTheme.body(12, color = if (it.ok) colors.inkSoft else colors.red),
-                    )
-                }
-            }
-            if (container.coordinator.isConfigured) Section(
-                "Sync", "Syncs when the app opens, shortly after edits, and when you pull the list down. Photos upload in the background as soon as the network is back.",
-            ) {
-                LabelValueRow("Last sync") {
-                    Text(
-                        sync.lastSyncAt?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it.toEpochMilli())) } ?: "Never",
-                        Modifier.testTag("lastSyncValue"), style = AppTheme.body(14, color = colors.ink),
-                    )
-                }
-                if (sync.unsentChanges > 0) LabelValueRow("Not sent yet") { Text("${sync.unsentChanges} change(s)", style = AppTheme.body(14, color = colors.ink)) }
-                if (sync.rejectedRecords > 0) {
-                    LabelValueRow("Refused by the server") { Text("${sync.rejectedRecords} record(s)", style = AppTheme.body(14, color = colors.ink)) }
-                    Text("Edit such a record again to send it again.", style = AppTheme.body(12, color = colors.inkSoft))
-                }
-                sync.lastError?.let { Text(it, style = AppTheme.body(12, color = colors.red)) }
-                QuietButton(if (sync.phase == SyncPhase.SYNCING) "Syncing…" else "Sync now", Modifier.testTag("syncNowButton"), enabled = sync.phase != SyncPhase.SYNCING) {
-                    scope.launch { container.coordinator.syncNow(); cacheBytes = container.coordinator.photoCacheBytes }
-                }
-            }
-            Section(
-                "Photos",
-                "This phone keeps up to ${SyncCapabilities.MOBILE.photoCacheBytes / 1_000_000} MB of receipt photos, oldest dropped first. The permanent photo archive is on your laptop: this phone never archives photos or releases the server's copy.",
-            ) {
-                LabelValueRow("Cached photos") { Text(formatBytes(cacheBytes), Modifier.testTag("cacheSize"), style = AppTheme.body(14, color = colors.ink)) }
-                QuietButton("Clear cached photos", Modifier.testTag("clearCacheButton"), danger = true) { confirmClear = true }
-            }
-            Section("About", null) {
-                Text("Item categories (the dictionary) are edited on the Mac; changes sync here.", style = AppTheme.body(12, color = colors.inkSoft))
-            }
+    fun disconnect() {
+        settings.vault.delete(); hasToken = false; settings.enabled = false; coordinator.configure(); result = null
+    }
+
+    fun test() {
+        focus.clearFocus()
+        testing = true
+        scope.launch {
+            result = coordinator.testConnection(url, typedToken.ifEmpty { settings.vault.read() })
+            testing = false
         }
     }
 
-    if (confirmClear) AlertDialog(
-        onDismissRequest = { confirmClear = false },
-        title = { Text("Clear cached photos?") },
-        text = { Text("Receipts keep their data. A photo the server still holds is downloaded again when you open it; one that is only on your laptop shows “This photo is on your laptop”.") },
-        confirmButton = {
-            TextButton(onClick = {
-                confirmClear = false
-                scope.launch { container.coordinator.clearPhotoCache(); cacheBytes = container.coordinator.photoCacheBytes }
-            }, modifier = Modifier.testTag("confirmClearCache")) { Text("Clear cached photos", color = colors.red) }
+    Column(Modifier.fillMaxSize().background(colors.desk)) {
+        AppTopBar("Settings", titleSize = 20f)
+        Column(
+            Modifier.weight(1f).fillMaxWidth().imePadding().dismissKeyboardOnDrag().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            SettingsSection(
+                "Server",
+                "Your own receipts backend. Photos are sent there and read by it; this phone has no AI of its own. The token is stored encrypted with the Android Keystore.",
+                buildList<@Composable () -> Unit> {
+                    add {
+                        FieldRow("Server URL") {
+                            AppTextField(
+                                url, { url = it }, Modifier.fillMaxWidth().testTag("serverURLField"),
+                                textStyle = AppTheme.mono(14), placeholder = "https://receipts.example.com", boxed = false,
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+                            )
+                        }
+                    }
+                    add {
+                        FieldRow("Receipts token") {
+                            AppTextField(
+                                tokenInput, { tokenInput = it }, Modifier.fillMaxWidth().testTag("tokenField"),
+                                textStyle = AppTheme.mono(14), placeholder = SettingsLogic.tokenPlaceholder(hasToken), boxed = false,
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                            )
+                        }
+                    }
+                    if (urlProblem != null) add { RowFrame { Text(urlProblem, style = AppTheme.body(13, color = colors.red)) } }
+                    add { ActionRow("Save", Icons.Outlined.Save, ::save, enabled = canSave, testTag = "saveSettingsButton") }
+                    if (hasToken) add { ActionRow("Remove token and disconnect", Icons.Outlined.LinkOff, ::disconnect, color = colors.red, testTag = "disconnectButton") }
+                },
+            )
+
+            SettingsSection(
+                null, null,
+                buildList<@Composable () -> Unit> {
+                    add {
+                        ActionRow(
+                            "Test connection", Icons.Outlined.NetworkCheck, ::test, enabled = !testing && canSave, testTag = "testConnectionButton", busy = testing,
+                            busyLabel = "Testing…",
+                        )
+                    }
+                    result?.let { r ->
+                        add {
+                            RowFrame {
+                                NoteBox(
+                                    if (r.ok) Icons.Outlined.CheckCircle else Icons.Outlined.Dangerous, r.message,
+                                    if (r.ok) colors.greenText else colors.red, if (r.ok) colors.greenBg else colors.redBg,
+                                    testTag = "testConnectionResult",
+                                )
+                            }
+                        }
+                    }
+                },
+            )
+
+            if (coordinator.isConfigured) SettingsSection(
+                "Sync", "Syncs when the app opens, shortly after edits, and when you pull the list down.",
+                buildList<@Composable () -> Unit> {
+                    add {
+                        ValueRow("Last sync") {
+                            Text(
+                                sync.lastSyncAt?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it.toEpochMilli())) } ?: "Never",
+                                Modifier.testTag("lastSyncValue"), style = AppTheme.mono(13, color = colors.inkSoft),
+                            )
+                        }
+                    }
+                    if (sync.unsentChanges > 0) add { ValueRow("Not sent yet") { Capsule(SettingsLogic.changeCount(sync.unsentChanges), colors.ink, colors.desk) } }
+                    if (sync.rejectedRecords > 0) add {
+                        RowFrame {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Refused by the server", style = AppTheme.body(15, color = colors.ink))
+                                    Spacer(Modifier.weight(1f))
+                                    Capsule(SettingsLogic.recordCount(sync.rejectedRecords), colors.red, colors.redBg)
+                                }
+                                Text("Edit such a record again to send it again.", style = AppTheme.body(12.5f, color = colors.inkSoft))
+                            }
+                        }
+                    }
+                    sync.lastError?.let { error -> add { RowFrame { Text(error, style = AppTheme.body(13, color = colors.red)) } } }
+                    add {
+                        ActionRow(
+                            "Sync now", Icons.Outlined.Sync,
+                            { scope.launch { coordinator.syncNow(); refreshCache() } },
+                            enabled = sync.phase != SyncPhase.SYNCING, testTag = "syncNowButton", busy = sync.phase == SyncPhase.SYNCING, busyLabel = "Syncing…",
+                        )
+                    }
+                },
+            )
+
+            SettingsSection(
+                "Photos", SettingsLogic.photosFooter(formatFileSize(SyncCapabilities.MOBILE.photoCacheBytes)),
+                buildList<@Composable () -> Unit> {
+                    add { ValueRow("Cached photos") { Text(formatFileSize(cacheBytes), Modifier.testTag("cacheSize"), style = AppTheme.mono(13, color = colors.inkSoft)) } }
+                    add { ActionRow("Clear cached photos", Icons.Outlined.Delete, { confirmClear = true }, color = colors.red, testTag = "clearCacheButton") }
+                },
+            )
+
+            SettingsSection(
+                "About", null,
+                listOf {
+                    RowFrame {
+                        Text(
+                            "Item categories (the dictionary) are edited on the Mac; changes sync here. Items without a category can be sorted out under Overview.",
+                            style = AppTheme.body(14, color = colors.inkSoft),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    if (confirmClear) AppConfirmDialog(
+        title = "Clear cached photos?",
+        message = "Receipts keep their data. A photo the server still holds is downloaded again when you open it; one that is only on your laptop shows “This photo is on your laptop”.",
+        confirmLabel = "Clear cached photos", destructive = true, confirmTestTag = "confirmClearCache",
+        onConfirm = {
+            confirmClear = false
+            scope.launch { coordinator.clearPhotoCache(); refreshCache() }
         },
-        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+        onDismiss = { confirmClear = false },
     )
 }
 
-private fun formatBytes(bytes: Long): String = when {
-    bytes < 1_000 -> "$bytes B"
-    bytes < 1_000_000 -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1e3)
-    else -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1e6)
+// ---------------------------------------------------------------------------------------------------------------------
+// Form pieces (the iPhone's grouped Form: header, a paper card of rows, footer)
+
+@Composable
+private fun SettingsSection(title: String?, footer: String?, rows: List<@Composable () -> Unit>) {
+    val colors = AppTheme.colors
+    Column(Modifier.fillMaxWidth()) {
+        title?.let { SectionLabel(it, Modifier.padding(start = 16.dp, bottom = 6.dp)) }
+        Column(Modifier.fillMaxWidth().background(colors.paper, RoundedCornerShape(10.dp))) {
+            rows.forEachIndexed { index, row ->
+                if (index > 0) RuleDivider(Modifier.padding(start = 16.dp))
+                row()
+            }
+        }
+        footer?.let { Text(it, Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp), style = AppTheme.body(12.5f, color = colors.label)) }
+    }
+}
+
+/** A row's frame: at least 44dp high, 16dp at the sides, 10dp above and below. */
+@Composable
+private fun RowFrame(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Column(modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.Center) { content() }
 }
 
 @Composable
-private fun Section(title: String?, footer: String?, content: @Composable () -> Unit) {
-    val colors = AppTheme.colors
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        title?.let { SectionLabel(it) }
-        Paper(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() } }
-        footer?.let { Text(it, style = AppTheme.body(12, color = colors.inkSoft)) }
+private fun FieldRow(caption: String, field: @Composable () -> Unit) {
+    RowFrame {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(caption, style = AppTheme.body(12, color = AppTheme.colors.inkSoft))
+            field()
+        }
     }
 }
 
 @Composable
-private fun Field(value: String, onChange: (String) -> Unit, label: String, placeholder: String, tag: String, type: KeyboardType, password: Boolean = false) {
-    val colors = AppTheme.colors
-    OutlinedTextField(
-        value = value, onValueChange = onChange, singleLine = true, label = { Text(label) },
-        placeholder = { Text(placeholder, style = AppTheme.body(14, color = colors.inkSoft)) },
-        modifier = Modifier.fillMaxWidth().testTag(tag),
-        visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = type, autoCorrectEnabled = false, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None),
-        shape = RoundedCornerShape(4.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = colors.ink, unfocusedBorderColor = colors.rule, focusedLabelColor = colors.ink, unfocusedLabelColor = colors.inkSoft,
-            focusedContainerColor = colors.field, unfocusedContainerColor = colors.field, cursorColor = colors.ink,
-        ),
+private fun ValueRow(title: String, value: @Composable () -> Unit) {
+    RowFrame {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = AppTheme.body(15, color = AppTheme.colors.ink))
+            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            value()
+        }
+    }
+}
+
+@Composable
+private fun Capsule(text: String, color: Color, background: Color) {
+    Text(
+        text, Modifier.background(background, CircleShape).padding(horizontal = 8.dp, vertical = 3.dp),
+        style = AppTheme.mono(12, FontWeight.Medium, color),
     )
+}
+
+/** A button of the iPhone Form: plain `ink` text (Medium 17) with an optional icon, the whole row tappable; dimmed when disabled. */
+@Composable
+private fun ActionRow(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    color: Color = AppTheme.colors.ink,
+    testTag: String? = null,
+    busy: Boolean = false,
+    busyLabel: String = "",
+) {
+    Row(
+        modifier
+            .let { if (testTag != null) it.testTag(testTag) else it }
+            .fillMaxWidth().alpha(if (enabled) 1f else 0.4f)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (busy) {
+            MiniSpinner(16.dp, color, 2.dp)
+            Text(busyLabel, style = AppTheme.body(17, FontWeight.Medium, color))
+        } else {
+            Icon(icon, null, Modifier.size(20.dp), tint = color)
+            Text(label, style = AppTheme.body(17, FontWeight.Medium, color))
+        }
+    }
 }
