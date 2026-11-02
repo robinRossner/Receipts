@@ -164,14 +164,20 @@ class SyncEngine(
     // ---- push ----
 
     private suspend fun pushAll(report: SyncReport) {
-        // dictionary, then receipts, then line items: a record may only reference what the server already has
-        for (entity in listOf(PushEntity.DICTIONARY, PushEntity.RECEIPT, PushEntity.LINE_ITEM)) {
+        // new categories, then dictionary, then receipts, then line items: a record may only reference what the server
+        // already has (the server validates dictionary paths against its taxonomy including the additions of this push)
+        for (entity in listOf(PushEntity.TAXONOMY_ADDITION, PushEntity.DICTIONARY, PushEntity.RECEIPT, PushEntity.LINE_ITEM)) {
             var rounds = 0
+            var previous: Set<String>? = null
             while (rounds < 100) {
                 rounds++
                 val batch = store.collectPush(entity, config.pushChunk)
                 if (batch.isEmpty) break
-                val request = PushRequest(config.deviceId, batch.dictionary, batch.receipts, batch.lineItems)
+                // the same chunk again (e.g. a rejection the server could not name) would repeat for ever
+                val signature = batch.stamps.map { "${it.key}@${it.value}" }.toSet() + batch.taxonomyAdditions.map { it.label.lowercase() }
+                if (signature == previous) break
+                previous = signature
+                val request = PushRequest(config.deviceId, batch.dictionary, batch.receipts, batch.lineItems, batch.taxonomyAdditions.ifEmpty { null })
                 val response = api.push(request)
                 val summary = store.applyPushResults(batch, response)
                 report.push.applied += summary.applied
@@ -195,6 +201,7 @@ class SyncEngine(
         val dictionary = LinkedHashMap<String, com.robinrossner.receipts.data.api.WireDictionaryEntry>()
         val receipts = LinkedHashMap<String, com.robinrossner.receipts.data.api.WireReceipt>()
         val items = LinkedHashMap<String, com.robinrossner.receipts.data.api.WireLineItem>()
+        var additions = emptyList<com.robinrossner.receipts.data.api.WireTaxonomyAddition>()
         var pages = 0
         while (true) {
             pages++
@@ -203,7 +210,7 @@ class SyncEngine(
             } catch (e: ReceiptsApiException.Http) {
                 if (e.code == "bad_cursor" && !restarted) {
                     restarted = true; cursor = null
-                    dictionary.clear(); receipts.clear(); items.clear()
+                    dictionary.clear(); receipts.clear(); items.clear(); additions = emptyList()
                     continue
                 }
                 throw e
@@ -212,11 +219,12 @@ class SyncEngine(
             page.dictionary.forEach { dictionary[it.id.lowercase()] = it }
             page.receipts.forEach { receipts[it.id.lowercase()] = it }
             page.lineItems.forEach { items[it.id.lowercase()] = it }
+            page.taxonomyAdditions?.let { additions = it }   // every page carries the full list; null = a server without the feature
             cursor = page.cursor
             if (!page.hasMore || pages >= SyncConfig.MAX_PAGES) break
         }
         // Applied first, cursor persisted second: a crash in between just repeats the pull.
-        report.pulled = store.applyPull(dictionary.values.toList(), receipts.values.toList(), items.values.toList())
+        report.pulled = store.applyPull(dictionary.values.toList(), receipts.values.toList(), items.values.toList(), additions)
         if (cursor != null) store.setMeta(config.cursorKey, cursor)
         needsFullPull = false
     }

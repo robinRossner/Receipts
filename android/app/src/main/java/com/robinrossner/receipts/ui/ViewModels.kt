@@ -7,12 +7,14 @@ import com.robinrossner.receipts.data.CategoryStat
 import com.robinrossner.receipts.data.MonthCategoryTotal
 import com.robinrossner.receipts.data.PricePoint
 import com.robinrossner.receipts.data.PurchaseRow
+import com.robinrossner.receipts.data.OverviewCursor
 import com.robinrossner.receipts.data.Rules
 import com.robinrossner.receipts.data.StatsSummary
 import com.robinrossner.receipts.data.StoreTotal
 import com.robinrossner.receipts.data.StatsCalc
 import com.robinrossner.receipts.data.db.ItemRow
 import com.robinrossner.receipts.data.db.LocalStatus
+import com.robinrossner.receipts.data.isUnfinished
 import com.robinrossner.receipts.data.db.ReceiptEntity
 import com.robinrossner.receipts.data.db.ReceiptSummary
 import com.robinrossner.receipts.data.sync.PhotoFetchResult
@@ -100,15 +102,9 @@ data class ListUi(
 
     /** Order the list shows rows in (needs review first). */
     val displayOrder get() = unreviewed + reviewed
-    val unflaggedUnreviewed get() = all.filter { it.reviewedAt == null && !it.needsReview }
 
-    /** After confirming [uuid]: the next unreviewed receipt after it in the list, else the first unreviewed; null if none. */
-    fun nextToReview(uuid: String): String? {
-        val order = displayOrder
-        val before = order.indexOfFirst { it.uuid == uuid }.coerceAtLeast(0)
-        val pending = order.withIndex().filter { it.value.reviewedAt == null && it.value.uuid != uuid }
-        return (pending.firstOrNull { it.index > before } ?: pending.firstOrNull())?.value?.uuid
-    }
+    /** What "Confirm all without flags" can touch: unreviewed, unflagged receipts the server is not still reading. */
+    val confirmableWithoutFlags get() = all.filter { it.reviewedAt == null && !it.needsReview && !it.isUnfinished }
 }
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -136,13 +132,17 @@ class ListViewModel(private val c: AppContainer) : ViewModel() {
 
     private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
+    /** Review reasons of the flagged, unreviewed receipts by id (first reason else "Needs review" on a list row). */
+    val reviewReasons: StateFlow<Map<String, List<String>>> = repo.observeReviewReasons()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     fun clearFilters() { searchText.value = ""; dateRange.value = DateRange.ALL; storeFilter.value = null }
 
     fun refresh() = viewModelScope.launch { c.coordinator.syncNow() }
     fun delete(uuid: String) = viewModelScope.launch { repo.deleteReceipt(uuid) }
     fun restore(uuid: String) = viewModelScope.launch { repo.restoreReceipt(uuid) }
     fun purge(uuid: String) = viewModelScope.launch { repo.purgeReceipt(uuid) }
-    fun confirmAllWithoutFlags() = viewModelScope.launch { repo.confirmAllWithoutFlags(ui.value.unflaggedUnreviewed.map { it.uuid }) }
+    fun confirmAllWithoutFlags() = viewModelScope.launch { repo.confirmAllWithoutFlags(ui.value.confirmableWithoutFlags.map { it.uuid }) }
 }
 
 /** What the Photo tab shows. */
@@ -293,7 +293,10 @@ class OverviewViewModel(private val c: AppContainer) : ViewModel() {
 
     fun setMode(mode: RangeMode) = _ui.update { it.copy(mode = mode) }
     fun move(delta: Int) = _ui.update {
-        it.copy(cursor = if (it.mode == RangeMode.YEAR) it.cursor.plusYears(delta.toLong()) else it.cursor.plusMonths(delta.toLong()))
+        val byYear = it.mode == RangeMode.YEAR
+        val next = if (byYear) it.cursor.plusYears(delta.toLong()) else it.cursor.plusMonths(delta.toLong())
+        // never past the current month / year
+        if (delta > 0 && OverviewCursor.isLatest(it.cursor, byYear)) it else it.copy(cursor = next)
     }
     fun setCustomStart(d: LocalDate) = _ui.update { it.copy(customStart = d) }
     fun setCustomEnd(d: LocalDate) = _ui.update { it.copy(customEnd = d) }

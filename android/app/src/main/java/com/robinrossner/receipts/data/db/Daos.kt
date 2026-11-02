@@ -37,6 +37,9 @@ data class ItemRow(
     val subcategory: String?,
     val itemGroup: String?,
     val dictNeedsReview: Boolean,
+    val categoryFlagged: Boolean,
+    val suggestedCategory: String?,
+    val suggestedParent: String?,
 )
 
 data class GroupTotalRow(val category: String, val subcategory: String, val itemGroup: String, val total: Double)
@@ -56,6 +59,19 @@ data class PurchaseDbRow(
 data class PricePointRow(val date: String?, val item: String?, val unitPrice: Double, val dictId: String)
 data class UsageRow(val items: Int, val receipts: Int)
 
+/** A flagged dictionary entry with how often live receipts use it. */
+data class FlaggedDbRow(
+    val dictionaryId: String,
+    val name: String,
+    val translationEn: String?,
+    val suggestedCategory: String?,
+    val suggestedParent: String?,
+    val itemCount: Int,
+    val totalSpend: Double,
+)
+data class FlaggedReceiptDbRow(val dictionaryId: String, val receiptId: String)
+data class ReviewReasonRow(val uuid: String, val reviewReasons: String)
+
 @Dao
 interface ReceiptDao {
     @Query(
@@ -74,6 +90,10 @@ interface ReceiptDao {
 
     @Query("SELECT * FROM receipts WHERE uuid = :uuid")
     suspend fun get(uuid: String): ReceiptEntity?
+
+    /** Review reasons of the flagged, unreviewed, live receipts (the inline line on a list row). */
+    @Query("SELECT uuid, reviewReasons FROM receipts WHERE deletedAt IS NULL AND purged = 0 AND reviewedAt IS NULL AND needsReview = 1")
+    fun observeReviewReasons(): Flow<List<ReviewReasonRow>>
 
     @Query("SELECT * FROM receipts WHERE uuid = :uuid")
     fun observe(uuid: String): Flow<ReceiptEntity?>
@@ -97,14 +117,16 @@ interface ReceiptDao {
     @Query(
         """SELECT (SELECT COUNT(*) FROM receipts WHERE syncState = 'dirty' AND COALESCE(extractionStatus, '') NOT IN ('pending_upload','upload_failed'))
              + (SELECT COUNT(*) FROM line_items WHERE syncState = 'dirty')
-             + (SELECT COUNT(*) FROM item_dictionary WHERE syncState = 'dirty')""",
+             + (SELECT COUNT(*) FROM item_dictionary WHERE syncState = 'dirty')
+             + (SELECT COUNT(*) FROM taxonomy_additions WHERE syncState = 'dirty')""",
     )
     suspend fun unsentChangeCount(): Int
 
     @Query(
         """SELECT (SELECT COUNT(*) FROM receipts WHERE syncState = 'rejected')
              + (SELECT COUNT(*) FROM line_items WHERE syncState = 'rejected')
-             + (SELECT COUNT(*) FROM item_dictionary WHERE syncState = 'rejected')""",
+             + (SELECT COUNT(*) FROM item_dictionary WHERE syncState = 'rejected')
+             + (SELECT COUNT(*) FROM taxonomy_additions WHERE syncState = 'rejected')""",
     )
     suspend fun rejectedCount(): Int
 
@@ -232,7 +254,8 @@ interface LineItemDao {
         """SELECT li.uuid AS uuid, li.itemDictionaryId AS itemDictionaryId, li.position AS position, li.rawText AS rawText,
                   li.nameDe AS nameDe, li.quantity AS quantity, li.unitPrice AS unitPrice, li.totalPrice AS totalPrice,
                   d.translationEn AS translationEn, d.category AS category, d.subcategory AS subcategory, d.itemGroup AS itemGroup,
-                  d.needsReview AS dictNeedsReview
+                  d.needsReview AS dictNeedsReview, d.categoryFlagged AS categoryFlagged, d.suggestedCategory AS suggestedCategory,
+                  d.suggestedParent AS suggestedParent
            FROM line_items li JOIN item_dictionary d ON li.itemDictionaryId = d.uuid
            WHERE li.receiptId = :receiptId AND li.deletedAt IS NULL ORDER BY li.position, li.uuid""",
     )
@@ -289,6 +312,75 @@ interface DictionaryDao {
 
     @Query("UPDATE line_items SET itemDictionaryId = :newId, syncState = 'dirty', updatedAt = :now WHERE itemDictionaryId = :oldId")
     suspend fun repointItems(oldId: String, newId: String, now: String)
+}
+
+@Dao
+interface FlaggedDao {
+    /** Entries a live receipt uses, grouped by suggestion later (`Flagged.kt`); the spend counts live items only. */
+    @Query(
+        """SELECT d.uuid AS dictionaryId, COALESCE(NULLIF(d.displayNameDe, ''), d.canonicalName) AS name, d.translationEn AS translationEn,
+                  d.suggestedCategory AS suggestedCategory, d.suggestedParent AS suggestedParent,
+                  COUNT(li.uuid) AS itemCount, COALESCE(SUM(li.totalPrice), 0) AS totalSpend
+           FROM item_dictionary d
+           JOIN line_items li ON li.itemDictionaryId = d.uuid AND li.deletedAt IS NULL
+           JOIN receipts r ON r.uuid = li.receiptId AND r.deletedAt IS NULL AND r.purged = 0
+           WHERE d.categoryFlagged = 1 AND d.deletedAt IS NULL
+           GROUP BY d.uuid
+           ORDER BY lower(COALESCE(d.suggestedParent, '')), lower(COALESCE(d.suggestedCategory, '')), d.uuid""",
+    )
+    fun observeList(): Flow<List<FlaggedDbRow>>
+
+    @Query(
+        """SELECT d.uuid AS dictionaryId, COALESCE(NULLIF(d.displayNameDe, ''), d.canonicalName) AS name, d.translationEn AS translationEn,
+                  d.suggestedCategory AS suggestedCategory, d.suggestedParent AS suggestedParent,
+                  COUNT(li.uuid) AS itemCount, COALESCE(SUM(li.totalPrice), 0) AS totalSpend
+           FROM item_dictionary d
+           JOIN line_items li ON li.itemDictionaryId = d.uuid AND li.deletedAt IS NULL
+           JOIN receipts r ON r.uuid = li.receiptId AND r.deletedAt IS NULL AND r.purged = 0
+           WHERE d.categoryFlagged = 1 AND d.deletedAt IS NULL
+           GROUP BY d.uuid
+           ORDER BY lower(COALESCE(d.suggestedParent, '')), lower(COALESCE(d.suggestedCategory, '')), d.uuid""",
+    )
+    suspend fun list(): List<FlaggedDbRow>
+
+    /** Live receipts per flagged entry, newest first. */
+    @Query(
+        """SELECT li.itemDictionaryId AS dictionaryId, r.uuid AS receiptId FROM line_items li
+           JOIN receipts r ON r.uuid = li.receiptId AND r.deletedAt IS NULL AND r.purged = 0
+           JOIN item_dictionary d ON d.uuid = li.itemDictionaryId AND d.categoryFlagged = 1 AND d.deletedAt IS NULL
+           WHERE li.deletedAt IS NULL GROUP BY li.itemDictionaryId, r.uuid ORDER BY r.createdAt DESC, r.uuid""",
+    )
+    suspend fun receiptRows(): List<FlaggedReceiptDbRow>
+
+    /** The badge: entries a live receipt uses, not all flagged rows. */
+    @Query(
+        """SELECT COUNT(*) FROM item_dictionary d WHERE d.categoryFlagged = 1 AND d.deletedAt IS NULL AND EXISTS
+             (SELECT 1 FROM line_items li JOIN receipts r ON r.uuid = li.receiptId AND r.deletedAt IS NULL AND r.purged = 0
+              WHERE li.itemDictionaryId = d.uuid AND li.deletedAt IS NULL)""",
+    )
+    fun observeCount(): Flow<Int>
+}
+
+@Dao
+interface TaxonomyDao {
+    @Query("SELECT * FROM taxonomy_additions ORDER BY createdAt, id")
+    fun observeAll(): Flow<List<TaxonomyAdditionEntity>>
+
+    @Query("SELECT * FROM taxonomy_additions ORDER BY createdAt, id")
+    suspend fun all(): List<TaxonomyAdditionEntity>
+
+    /** -1 = the path (in any case) is already there. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(e: TaxonomyAdditionEntity): Long
+
+    @Query("SELECT * FROM taxonomy_additions WHERE syncState = 'dirty' ORDER BY createdAt, id LIMIT :limit")
+    suspend fun dirty(limit: Int): List<TaxonomyAdditionEntity>
+
+    @Query("UPDATE taxonomy_additions SET syncState = :state, syncError = :error WHERE syncState = 'dirty' AND pathKey = :key")
+    suspend fun mark(key: String, state: String, error: String?)
+
+    @Query("UPDATE taxonomy_additions SET syncState = 'synced', syncError = NULL WHERE pathKey = :key")
+    suspend fun acknowledge(key: String)
 }
 
 @Dao

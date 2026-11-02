@@ -26,7 +26,7 @@ class AppContainer(app: Application) {
     val taxonomy: Taxonomy = Taxonomy.parse(app.assets.open("category_taxonomy.json").bufferedReader().use { it.readText() })
     val syncStore = SyncStore(db, paths)
     val coordinator = SyncCoordinator(scope, syncStore, settings, debugBuild = BuildConfig.DEBUG)
-    val repository = ReceiptRepository(db, paths) { coordinator.noteLocalChange() }
+    val repository = ReceiptRepository(db, paths, taxonomy, scope) { coordinator.noteLocalChange() }
     val importer = ReceiptImporter(app, scope, syncStore, db, paths) { coordinator.expectServerWork() }
 }
 

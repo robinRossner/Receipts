@@ -96,6 +96,8 @@ import com.robinrossner.receipts.data.Rules
 import com.robinrossner.receipts.data.db.ItemRow
 import com.robinrossner.receipts.data.db.ReceiptEntity
 import com.robinrossner.receipts.ui.DetailViewModel
+import com.robinrossner.receipts.data.ReviewQueue
+import com.robinrossner.receipts.data.isUnfinished
 import com.robinrossner.receipts.ui.ListUi
 import com.robinrossner.receipts.ui.PhotoUi
 import com.robinrossner.receipts.ui.Processing
@@ -155,9 +157,9 @@ fun ReceiptDetailScreen(
                     Button(
                         onClick = {
                             vm.confirm()
-                            list.nextToReview(r.uuid)?.let(onNext)
+                            ReviewQueue.next(r.uuid, list.all)?.uuid?.let(onNext)
                         },
-                        enabled = !reviewed,
+                        enabled = !reviewed && !r.isUnfinished,
                         modifier = Modifier.testTag("looksGoodButton"),
                         shape = RoundedCornerShape(4.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 30.dp, vertical = 11.dp),

@@ -1,5 +1,6 @@
 package com.robinrossner.receipts.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -74,7 +75,7 @@ data class LineItemEntity(
     val syncError: String? = null,
 )
 
-@Entity(tableName = "item_dictionary", indices = [Index("canonicalName"), Index("syncState")])
+@Entity(tableName = "item_dictionary", indices = [Index("canonicalName"), Index("syncState"), Index("categoryFlagged")])
 data class DictionaryEntity(
     @PrimaryKey val uuid: String,
     val canonicalName: String,
@@ -87,6 +88,13 @@ data class DictionaryEntity(
     val aliases: String = "[]",
     val isManualOverride: Boolean = false,
     val needsReview: Boolean = false,
+    /**
+     * "No good category": the server's categoriser found no fitting category and filed the item under the fallback.
+     * The suggestions are non-null only while flagged ("Category" or "Category > Subcategory" for the parent).
+     */
+    @ColumnInfo(defaultValue = "0") val categoryFlagged: Boolean = false,
+    val suggestedCategory: String? = null,
+    val suggestedParent: String? = null,
     val timesSeen: Int = 1,
     val createdAt: String? = null,
     val lastSeenAt: String? = null,
@@ -95,6 +103,29 @@ data class DictionaryEntity(
     val syncState: String = SyncState.SYNCED,
     val syncError: String? = null,
 )
+
+/**
+ * A category path (category > subcategory > item group) the user added to the taxonomy. Append-only: never edited or
+ * deleted, so the merge with the bundled taxonomy is the same on every device. Room cannot index `lower(...)`, so the
+ * lower-cased path is stored as [pathKey] and is unique: the same path in another case is the same row.
+ */
+@Entity(tableName = "taxonomy_additions", indices = [Index("pathKey", unique = true)])
+data class TaxonomyAdditionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val category: String,
+    val subcategory: String,
+    val itemGroup: String,
+    val createdAt: String,
+    val pathKey: String,
+    @ColumnInfo(defaultValue = "'dirty'") val syncState: String = SyncState.DIRTY,
+    val syncError: String? = null,
+) {
+    companion object {
+        /** `"$category > $subcategory > $itemGroup"` lower-cased: how the server spells a path in push results, too. */
+        fun keyOf(category: String, subcategory: String, itemGroup: String) =
+            "$category > $subcategory > $itemGroup".lowercase(java.util.Locale.ROOT)
+    }
+}
 
 @Entity(tableName = "sync_meta")
 data class MetaEntity(@PrimaryKey val key: String, val value: String?)

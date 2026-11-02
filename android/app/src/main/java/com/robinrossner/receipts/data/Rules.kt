@@ -1,6 +1,7 @@
 package com.robinrossner.receipts.data
 
 import com.robinrossner.receipts.data.sync.StringLists
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
@@ -8,19 +9,48 @@ import kotlin.math.roundToLong
 object Rules {
     const val SUM_MISMATCH_TOLERANCE = 0.02
 
-    private val storeNameMap = mapOf(
-        "edeka" to "Edeka", "aldi sud" to "Aldi Süd", "aldi süd" to "Aldi Süd", "aldi nord" to "Aldi Nord",
-        "dm-drogerie markt" to "dm", "dm" to "dm", "rewe" to "Rewe", "lidl" to "Lidl", "penny-markt gmbh" to "Penny",
-        "penny" to "Penny", "rossmann" to "Rossmann", "kaufland" to "Kaufland",
-    )
-
     /** The chain names the extraction can produce (store-name suggestions). */
-    val canonicalStoreNames: List<String> = storeNameMap.values.toSet().sorted()
+    val canonicalStoreNames: List<String> = listOf("Aldi Nord", "Aldi Süd", "Edeka", "Kaufland", "Lidl", "Penny", "Rewe", "Rossmann", "dm")
 
+    private val anywhereChains = mapOf("edeka" to "Edeka", "rewe" to "Rewe", "lidl" to "Lidl", "kaufland" to "Kaufland", "rossmann" to "Rossmann")
+    private val diacritics = Regex("\\p{M}+")
+
+    /**
+     * The chain a printed store name stands for ("EDEKA Musterstadt" -> "Edeka"), else the trimmed name as printed.
+     * Chains are recognised by whole words, never by substring (ReceiptPipeline.canonicalizeStore, mirrored by the
+     * backend's `canonicalize_store`): lower-case, diacritics folded, every run of characters other than a-z / 0-9 is a
+     * word break. Reading the words left to right, the first rule that fits wins: `dm` only as the whole name or
+     * "dm drogerie ...", `penny` only as the first word, the other chains as a word anywhere, "aldi" + sud|sued|nord.
+     */
     fun canonicalizeStore(raw: String?): String {
-        val trimmed = raw?.trim().orEmpty()
+        val trimmed = raw?.trimSpaces().orEmpty()
         if (trimmed.isEmpty()) return "Unknown"
-        return storeNameMap[trimmed.lowercase()] ?: trimmed
+        return chain(storeWords(trimmed)) ?: trimmed
+    }
+
+    /** ß is not folded (it is a word break), like Swift's diacritic-insensitive folding. */
+    private fun storeWords(raw: String): List<String> {
+        val folded = diacritics.replace(java.text.Normalizer.normalize(raw.lowercase(Locale.ROOT), java.text.Normalizer.Form.NFD), "")
+        val words = mutableListOf<String>()
+        val current = StringBuilder()
+        for (c in folded) {
+            if (c in 'a'..'z' || c in '0'..'9') current.append(c) else if (current.isNotEmpty()) { words += current.toString(); current.clear() }
+        }
+        if (current.isNotEmpty()) words += current.toString()
+        return words
+    }
+
+    private fun chain(words: List<String>): String? {
+        if (words == listOf("dm") || (words.size >= 2 && words[0] == "dm" && words[1] == "drogerie")) return "dm"
+        if (words.firstOrNull() == "penny") return "Penny"
+        for ((i, word) in words.withIndex()) {
+            anywhereChains[word]?.let { return it }
+            if (word == "aldi" && i + 1 < words.size) when (words[i + 1]) {
+                "sud", "sued" -> return "Aldi Süd"
+                "nord" -> return "Aldi Nord"
+            }
+        }
+        return null
     }
 
     fun round2(v: Double): Double = (v * 100).roundToLong() / 100.0

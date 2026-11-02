@@ -178,9 +178,9 @@ fun ReceiptListScreen(container: AppContainer, vm: ListViewModel, onOpen: (Strin
                                 DropdownMenuItem(text = { Text((if (storeFilter == s) "✓ " else "    ") + s) }, onClick = { vm.storeFilter.value = s; filterMenu = false })
                             }
                             if (ui.isFiltering) DropdownMenuItem(text = { Text("Clear filters") }, onClick = { vm.clearFilters(); filterMenu = false })
-                            if (ui.unflaggedUnreviewed.isNotEmpty()) {
+                            if (ui.confirmableWithoutFlags.isNotEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text("Confirm all without flags (${ui.unflaggedUnreviewed.size})") },
+                                    text = { Text("Confirm all without flags (${ui.confirmableWithoutFlags.size})") },
                                     onClick = { confirmAll = true; filterMenu = false },
                                 )
                             }
@@ -265,7 +265,7 @@ fun ReceiptListScreen(container: AppContainer, vm: ListViewModel, onOpen: (Strin
 
     if (confirmAll) AlertDialog(
         onDismissRequest = { confirmAll = false },
-        title = { Text("Confirm ${ui.unflaggedUnreviewed.size} receipts without flags?") },
+        title = { Text("Confirm ${ui.confirmableWithoutFlags.size} receipts without flags?") },
         text = { Text("Marks every unreviewed receipt that has no review reasons as reviewed. Receipts with warnings stay in “Needs review”.") },
         confirmButton = { TextButton(onClick = { vm.confirmAllWithoutFlags(); confirmAll = false }) { Text("Confirm all") } },
         dismissButton = { TextButton(onClick = { confirmAll = false }) { Text("Cancel") } },

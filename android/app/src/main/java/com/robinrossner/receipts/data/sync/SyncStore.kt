@@ -7,6 +7,8 @@ import com.robinrossner.receipts.data.api.PushStatus
 import com.robinrossner.receipts.data.api.WireDictionaryEntry
 import com.robinrossner.receipts.data.api.WireLineItem
 import com.robinrossner.receipts.data.api.WireReceipt
+import com.robinrossner.receipts.data.api.WireTaxonomyAddition
+import com.robinrossner.receipts.data.Taxonomy
 import com.robinrossner.receipts.data.db.AppDatabase
 import com.robinrossner.receipts.data.db.DictionaryEntity
 import com.robinrossner.receipts.data.db.LineItemEntity
@@ -14,8 +16,10 @@ import com.robinrossner.receipts.data.db.LocalStatus
 import com.robinrossner.receipts.data.db.MetaEntity
 import com.robinrossner.receipts.data.db.ReceiptEntity
 import com.robinrossner.receipts.data.db.SyncState
+import com.robinrossner.receipts.data.db.TaxonomyAdditionEntity
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
+import java.util.Locale
 
 /** JSON arrays of strings in text columns (aliases, review reasons). */
 object StringLists {
@@ -31,10 +35,11 @@ data class PushBatch(
     val dictionary: List<WireDictionaryEntry> = emptyList(),
     val receipts: List<WireReceipt> = emptyList(),
     val lineItems: List<WireLineItem> = emptyList(),
+    val taxonomyAdditions: List<WireTaxonomyAddition> = emptyList(),
     /** `entity:uuid` -> the `updated_at` that was sent. */
     val stamps: Map<String, String> = emptyMap(),
 ) {
-    val isEmpty get() = dictionary.isEmpty() && receipts.isEmpty() && lineItems.isEmpty()
+    val isEmpty get() = dictionary.isEmpty() && receipts.isEmpty() && lineItems.isEmpty() && taxonomyAdditions.isEmpty()
 
     companion object {
         fun key(entity: PushEntity, id: String) = "${entity.name}:$id"
@@ -43,8 +48,12 @@ data class PushBatch(
 
 data class PushSummary(var applied: Int = 0, var stale: Int = 0, val rejected: MutableList<String> = mutableListOf())
 
-data class ApplySummary(var dictionary: Int = 0, var receipts: Int = 0, var lineItems: Int = 0, var deletedLocally: Int = 0) {
-    val total get() = dictionary + receipts + lineItems + deletedLocally
+data class ApplySummary(
+    var dictionary: Int = 0, var receipts: Int = 0, var lineItems: Int = 0, var deletedLocally: Int = 0,
+    /** User-added categories that were new on this phone. */
+    var taxonomyAdditions: Int = 0,
+) {
+    val total get() = dictionary + receipts + lineItems + deletedLocally + taxonomyAdditions
 }
 
 /** Local persistence of the sync engine, over Room. */
@@ -53,6 +62,7 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
     private val items get() = db.lineItems()
     private val dictionary get() = db.dictionary()
     private val sync get() = db.sync()
+    private val taxonomy get() = db.taxonomy()
 
     suspend fun meta(key: String): String? = sync.meta(key)
     suspend fun setMeta(key: String, value: String?) {
@@ -67,10 +77,13 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
 
     /**
      * One chunk of the local changes of one entity kind (live records and tombstones alike: a delete is an edit with
-     * `deleted_at`). The engine sends all dictionary entries, then all receipts, then all line items, so references
-     * always exist on the server.
+     * `deleted_at`). The engine sends the new categories first, then all dictionary entries, then all receipts, then
+     * all line items, so references always exist on the server (an entry using a path the server does not know yet is
+     * rejected).
      */
     suspend fun collectPush(entity: PushEntity, limit: Int = 400): PushBatch = when (entity) {
+        PushEntity.TAXONOMY_ADDITION ->
+            PushBatch(taxonomyAdditions = taxonomy.dirty(limit).map { WireTaxonomyAddition(it.category, it.subcategory, it.itemGroup, it.createdAt) })
         PushEntity.DICTIONARY -> {
             val rows = sync.dirtyDictionary(limit).map { it.toWire().forPush() }
             PushBatch(dictionary = rows, stamps = rows.associate { PushBatch.key(entity, it.id) to it.updatedAt })
@@ -94,6 +107,23 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
         val summary = PushSummary()
         for (result in response.results) {
             val id = result.id
+            if (result.entity == PushEntity.TAXONOMY_ADDITION) {
+                // `id` is the path as the server spells it ("Household > Pets > Pet Food"; it may fix the case of an
+                // existing category), so match on the lower-cased path. A rejected result without an id cannot be matched.
+                val key = id?.lowercase(Locale.ROOT)
+                when (result.status) {
+                    PushStatus.APPLIED, PushStatus.STALE -> {   // stale: the path already exists, which is what we wanted
+                        if (result.status == PushStatus.APPLIED) summary.applied++ else summary.stale++
+                        if (key != null) taxonomy.mark(key, SyncState.SYNCED, null)
+                    }
+                    PushStatus.REJECTED -> {
+                        val reason = result.reason ?: "rejected"
+                        summary.rejected += "taxonomy_addition ${id ?: "?"}: $reason"
+                        if (key != null) taxonomy.mark(key, SyncState.REJECTED, reason)
+                    }
+                }
+                continue
+            }
             if (id == null) {
                 if (result.status == PushStatus.REJECTED) summary.rejected += result.reason ?: "rejected"
                 continue
@@ -106,6 +136,7 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
                         PushEntity.DICTIONARY -> sync.dictionarySynced(id, stamp)
                         PushEntity.RECEIPT -> sync.receiptSynced(id, stamp)
                         PushEntity.LINE_ITEM -> sync.lineItemSynced(id, stamp)
+                        PushEntity.TAXONOMY_ADDITION -> Unit
                     }
                 }
                 PushStatus.REJECTED -> {
@@ -115,6 +146,7 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
                         PushEntity.DICTIONARY -> sync.dictionaryRejected(id, stamp, reason)
                         PushEntity.RECEIPT -> sync.receiptRejected(id, stamp, reason)
                         PushEntity.LINE_ITEM -> sync.lineItemRejected(id, stamp, reason)
+                        PushEntity.TAXONOMY_ADDITION -> Unit
                     }
                 }
             }
@@ -127,8 +159,12 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
     /** Applies the pulled pages (already merged: the last version of a record wins) in ONE transaction. */
     suspend fun applyPull(
         dictionaryEntries: List<WireDictionaryEntry>, receiptList: List<WireReceipt>, lineItemList: List<WireLineItem>,
+        taxonomyAdditions: List<WireTaxonomyAddition> = emptyList(),
     ): ApplySummary = db.withTransaction {
         val summary = ApplySummary()
+        // 0. new category paths first: a dictionary entry may use one. Additions are append-only: a local one the
+        // server lacks (not pushed yet, or an older server) stays.
+        for (a in taxonomyAdditions) upsertAddition(a, summary)
         // 1. dictionary (live), 2. receipts, 3. line items, 4. dictionary tombstones last: a merge delivers the line
         // items' new dictionary id and the merged-away entry's tombstone together.
         for (e in dictionaryEntries) if (e.deletedAt == null) upsertDictionary(e, summary)
@@ -136,6 +172,19 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
         for (l in lineItemList) upsertLineItem(l, summary)
         for (e in dictionaryEntries) if (e.deletedAt != null) tombstoneDictionary(e, summary)
         summary
+    }
+
+    private suspend fun upsertAddition(a: WireTaxonomyAddition, summary: ApplySummary) {
+        if (Taxonomy.additionProblem(a.path) != null) return   // the server vouches for its paths, but a malformed one would break the pickers
+        val key = TaxonomyAdditionEntity.keyOf(a.category, a.subcategory, a.itemGroup)
+        val inserted = taxonomy.insert(
+            TaxonomyAdditionEntity(
+                category = a.category, subcategory = a.subcategory, itemGroup = a.itemGroup, createdAt = a.createdAt ?: SyncDate.now(),
+                pathKey = key, syncState = SyncState.SYNCED,
+            ),
+        )
+        if (inserted == -1L) taxonomy.acknowledge(key)   // we had it (maybe unsent): the server knows it now
+        else summary.taxonomyAdditions++
     }
 
     private suspend fun upsertDictionary(e: WireDictionaryEntry, summary: ApplySummary) {
@@ -160,7 +209,7 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
         val decision = SyncMerge.decide(SyncDate.parse(local.updatedAt), local.syncState == SyncState.DIRTY, SyncDate.parse(e.updatedAt))
         if (decision != SyncMerge.Decision.TAKE_SERVER) return
         dictionary.findAnyByName(e.canonicalName)?.takeIf { it.uuid != e.id.lowercase() }?.let { dictionary.parkName(it.uuid, it.uuid.take(8)) }
-        dictionary.upsert(e.toEntity().copy(createdAt = local.createdAt ?: e.createdAt))
+        dictionary.upsert(e.toEntity(local).copy(createdAt = local.createdAt ?: e.createdAt))
         summary.dictionary++
     }
 
@@ -250,15 +299,34 @@ class SyncStore(val db: AppDatabase, val paths: AppPaths) {
 fun DictionaryEntity.toWire() = WireDictionaryEntry(
     id = uuid, canonicalName = canonicalName, displayNameDe = displayNameDe, translationEn = translationEn, category = category,
     subcategory = subcategory, itemGroup = itemGroup, aliases = StringLists.decode(aliases), isManualOverride = isManualOverride,
-    needsReview = needsReview, timesSeen = timesSeen, createdAt = createdAt, lastSeenAt = lastSeenAt, updatedAt = updatedAt, deletedAt = deletedAt,
+    needsReview = needsReview, categoryFlagged = categoryFlagged, suggestedCategory = suggestedCategory.takeIf { categoryFlagged },
+    suggestedParent = suggestedParent.takeIf { categoryFlagged }, timesSeen = timesSeen, createdAt = createdAt, lastSeenAt = lastSeenAt,
+    updatedAt = updatedAt, deletedAt = deletedAt,
 )
 
-fun WireDictionaryEntry.toEntity() = DictionaryEntity(
-    uuid = id.lowercase(), canonicalName = canonicalName, displayNameDe = displayNameDe, translationEn = translationEn, category = category,
-    subcategory = subcategory, itemGroup = itemGroup, aliases = StringLists.encode(aliases), isManualOverride = isManualOverride,
-    needsReview = needsReview, timesSeen = timesSeen ?: 1, createdAt = createdAt ?: updatedAt, lastSeenAt = lastSeenAt ?: updatedAt,
-    updatedAt = updatedAt, deletedAt = deletedAt, syncState = SyncState.SYNCED,
-)
+/**
+ * The flag is the server's when it sends one. A server that does not know the flag omits it: [local]'s stays, unless
+ * the category changed (somebody chose a category, which resolves the flag).
+ */
+fun WireDictionaryEntry.toEntity(local: DictionaryEntity? = null): DictionaryEntity {
+    var flagged = categoryFlagged ?: false
+    var suggestedCategory = suggestedCategory
+    var suggestedParent = suggestedParent
+    if (local != null && categoryFlagged == null) {
+        val sameCategory = local.category == category && local.subcategory == subcategory && local.itemGroup == itemGroup
+        flagged = sameCategory && local.categoryFlagged
+        suggestedCategory = local.suggestedCategory
+        suggestedParent = local.suggestedParent
+    }
+    if (!flagged) { suggestedCategory = null; suggestedParent = null }
+    return DictionaryEntity(
+        uuid = id.lowercase(), canonicalName = canonicalName, displayNameDe = displayNameDe, translationEn = translationEn, category = category,
+        subcategory = subcategory, itemGroup = itemGroup, aliases = StringLists.encode(aliases), isManualOverride = isManualOverride,
+        needsReview = needsReview, categoryFlagged = flagged, suggestedCategory = suggestedCategory, suggestedParent = suggestedParent,
+        timesSeen = timesSeen ?: 1, createdAt = createdAt ?: updatedAt, lastSeenAt = lastSeenAt ?: updatedAt,
+        updatedAt = updatedAt, deletedAt = deletedAt, syncState = SyncState.SYNCED,
+    )
+}
 
 fun ReceiptEntity.toWire() = WireReceipt(
     id = uuid, store = store, date = date, time = time, total = total, computedSum = computedSum, needsReview = needsReview,

@@ -1,5 +1,6 @@
 package com.robinrossner.receipts.data.api
 
+import com.robinrossner.receipts.data.TaxonomyPath
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -30,13 +31,20 @@ data class WireDictionaryEntry(
     val aliases: List<String> = emptyList(),
     @SerialName("is_manual_override") val isManualOverride: Boolean = false,
     @SerialName("needs_review") val needsReview: Boolean = false,
+    /**
+     * "No good category" flag and the categoriser's suggestion. Null = the record says nothing about it (key omitted:
+     * the server keeps what it has). A push always states the flag, see `DictionaryEntity.toWire`.
+     */
+    @SerialName("category_flagged") val categoryFlagged: Boolean? = null,
+    @SerialName("suggested_category") val suggestedCategory: String? = null,
+    @SerialName("suggested_parent") val suggestedParent: String? = null,
     @SerialName("times_seen") val timesSeen: Int? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("last_seen_at") val lastSeenAt: String? = null,
     @SerialName("updated_at") val updatedAt: String,
     @SerialName("deleted_at") val deletedAt: String? = null,
 ) {
-    /** What a push may carry: the server ignores the rest. */
+    /** What a push may carry: the server ignores the rest (the flag fields stay: they are written by the phone, too). */
     fun forPush() = copy(legacyId = null, timesSeen = null, createdAt = null, lastSeenAt = null)
 }
 
@@ -102,6 +110,19 @@ data class WireLineItem(
     fun forPush() = copy(legacyId = null)
 }
 
+/** A category path the user added to the taxonomy; the server merges it into its copy and sends the full list with every pull. */
+@Serializable
+data class WireTaxonomyAddition(
+    val category: String,
+    val subcategory: String,
+    @SerialName("item_group") val itemGroup: String,
+    @SerialName("created_at") val createdAt: String? = null,
+) {
+    /** "Household > Pets > Pet Food" (how the server names it in push results). */
+    val path get() = TaxonomyPath(category, subcategory, itemGroup)
+    val label get() = path.label
+}
+
 // ---- push / pull ----
 
 @Serializable
@@ -110,8 +131,10 @@ data class PushRequest(
     val dictionary: List<WireDictionaryEntry> = emptyList(),
     val receipts: List<WireReceipt> = emptyList(),
     @SerialName("line_items") val lineItems: List<WireLineItem> = emptyList(),
+    /** Null, not empty, when there is nothing: the key is then omitted, as an older server expects. */
+    @SerialName("taxonomy_additions") val taxonomyAdditions: List<WireTaxonomyAddition>? = null,
 ) {
-    val isEmpty get() = dictionary.isEmpty() && receipts.isEmpty() && lineItems.isEmpty()
+    val isEmpty get() = dictionary.isEmpty() && receipts.isEmpty() && lineItems.isEmpty() && taxonomyAdditions.isNullOrEmpty()
 }
 
 @Serializable
@@ -119,6 +142,7 @@ enum class PushEntity {
     @SerialName("dictionary") DICTIONARY,
     @SerialName("receipt") RECEIPT,
     @SerialName("line_item") LINE_ITEM,
+    @SerialName("taxonomy_addition") TAXONOMY_ADDITION,
 }
 
 @Serializable
@@ -151,6 +175,8 @@ data class PullResponse(
     val dictionary: List<WireDictionaryEntry> = emptyList(),
     val receipts: List<WireReceipt> = emptyList(),
     @SerialName("line_items") val lineItems: List<WireLineItem> = emptyList(),
+    /** The full list of user-added categories on every page; null from a server without the feature. */
+    @SerialName("taxonomy_additions") val taxonomyAdditions: List<WireTaxonomyAddition>? = null,
 )
 
 // ---- upload, archive, status ----

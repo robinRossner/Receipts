@@ -82,7 +82,7 @@ Contract: `docs/api/receipts.md`; runbook: `deploy/README.md`.
   and the server (`canonicalize_store`), run against the same table of cases: "EDEKA Musterstadt" -> Edeka,
   "REWE Markt GmbH" -> Rewe, "Penny-Markt" -> Penny, "ALDI SÜD" / "ALDI SUED" -> Aldi Süd. Penny only as the first
   word and dm only as "dm" / "dm drogerie ..." (too short or too common elsewhere); a bare "Aldi" stays as printed.
-  Stored receipts are not rewritten. Android keeps its exact-match table until it is ported.
+  Stored receipts are not rewritten. Android uses the same rules (`Rules.canonicalizeStore`, tested against the same table).
 
 ## Model choice and the flag gap (2026-11-01)
 

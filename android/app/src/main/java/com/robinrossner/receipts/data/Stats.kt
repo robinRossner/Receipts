@@ -4,6 +4,8 @@ import com.robinrossner.receipts.data.db.GroupTotalRow
 import com.robinrossner.receipts.data.db.PricePointRow
 import com.robinrossner.receipts.data.db.StoreTotalRow
 import java.time.LocalDate
+import java.time.Year
+import java.time.YearMonth
 
 // Overview data, computed from the synced receipts, line items and dictionary (the server does no stats).
 
@@ -40,7 +42,8 @@ object StatsCalc {
     fun seriesNames(monthly: List<MonthCategoryTotal>): List<String> {
         val totals = LinkedHashMap<String, Double>()
         for (m in monthly) totals[m.category] = (totals[m.category] ?: 0.0) + m.total
-        val ranked = totals.entries.sortedByDescending { it.value }.map { it.key }.filter { it != OTHER }
+        // equal totals are ordered by name, so the colours do not change between loads
+        val ranked = totals.entries.sortedWith(compareByDescending<Map.Entry<String, Double>> { it.value }.thenBy { it.key }).map { it.key }.filter { it != OTHER }
         val top = ranked.take(MAX_SERIES)
         return if (ranked.size > MAX_SERIES || totals.containsKey(OTHER)) top + OTHER else top
     }
@@ -76,11 +79,32 @@ object StatsCalc {
     }
 
     /** "+12% vs last month"; null when there is no comparison period. */
-    fun deltaText(current: Double, previous: Double?, hasPrevious: Boolean, label: String): String? {
-        if (!hasPrevious) return null
-        if (previous == null || previous <= 0) return if (current > 0 || previous == null) "new vs $label" else null
-        val pct = (current - previous) / previous * 100
-        if (kotlin.math.abs(pct) < 0.5) return "±0% vs $label"
-        return String.format(java.util.Locale.US, "%+.0f%% vs %s", pct, label)
+    fun deltaText(current: Double, previous: Double?, hasPrevious: Boolean, label: String): String? =
+        SpendDelta.make(current, previous, hasPrevious, label)?.text
+}
+
+/** `+12% vs last month` under a total or a tree row. */
+data class SpendDelta(val text: String, val trend: Trend) {
+    enum class Trend { UP, DOWN, FLAT }
+
+    companion object {
+        /**
+         * [hasComparison]: the range has a previous period at all (month and year do, custom and all time do not).
+         * [previous]: what the previous period spent on this; null when it did not appear there.
+         */
+        fun make(current: Double, previous: Double?, hasComparison: Boolean, label: String): SpendDelta? {
+            if (!hasComparison) return null
+            if (previous == null) return SpendDelta("new vs $label", Trend.UP)
+            if (previous <= 0) return if (current > 0) SpendDelta("new vs $label", Trend.UP) else null
+            val percent = (current - previous) / previous * 100
+            if (kotlin.math.abs(percent) < 0.5) return SpendDelta("±0% vs $label", Trend.FLAT)
+            return SpendDelta(String.format(java.util.Locale.US, "%+.0f%% vs %s", percent, label), if (percent > 0) Trend.UP else Trend.DOWN)
+        }
     }
+}
+
+/** Moving through months and years on the Overview: never past the current one. */
+object OverviewCursor {
+    fun isLatest(cursor: LocalDate, byYear: Boolean, today: LocalDate = LocalDate.now()): Boolean =
+        if (byYear) Year.from(cursor) >= Year.from(today) else YearMonth.from(cursor) >= YearMonth.from(today)
 }
