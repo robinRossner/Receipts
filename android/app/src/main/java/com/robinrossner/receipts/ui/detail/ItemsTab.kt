@@ -270,7 +270,7 @@ private fun DateTimeRow(vm: DetailViewModel, r: ReceiptEntity) {
     val today = ReceiptDateFormat.date(LocalDate.now())
     val storedTime = r.time?.take(5)
 
-    /** Saves date and time when they differ from what is stored (needs a date). */
+    /** Saves date and time when they differ from what is stored. Without a date nothing is written, as on the iPhone (`saveDateTime`). */
     fun save(newDate: String?, newTime: String?) {
         if (newDate == null) return
         if (newDate != r.date || newTime != storedTime) vm.updateDateTime(newDate, newTime)
@@ -285,10 +285,10 @@ private fun DateTimeRow(vm: DetailViewModel, r: ReceiptEntity) {
             val text = ReceiptDateFormat.time(time)
             Pill(text, "Time $text", "timeButton") { showTime = true }
             Box(
-                Modifier.size(width = 32.dp, height = 44.dp).clickable { save(r.date ?: today, null) },
+                Modifier.size(width = 32.dp, height = 44.dp).clickable { save(r.date, null) },
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Filled.Cancel, "Clear time", Modifier.size(18.dp), tint = AppTheme.colors.inkSoft) }
-        } else OutlineButton("+ Add time", { save(r.date ?: today, ReceiptDateFormat.time(LocalTime.now())) })
+        } else OutlineButton("+ Add time", { save(r.date, ReceiptDateFormat.time(LocalTime.now())) })
     }
 
     if (showDate && date != null) {
