@@ -14,11 +14,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 enum class DateRange(val label: String) {
-    ALL("All dates"), THIS_MONTH("This month"), LAST_3_MONTHS("Last 3 months"), THIS_YEAR("This year");
+    ALL("All time"), THIS_MONTH("This month"), LAST_3_MONTHS("Last 3 months"), THIS_YEAR("This year");
 
     /** First day to show ("yyyy-MM-dd"), null = no limit. */
     fun cutoff(today: LocalDate = LocalDate.now()): String? = when (this) {
@@ -78,8 +80,14 @@ class ListViewModel(private val c: AppContainer) : ViewModel() {
     fun clearFilters() { searchText.value = ""; dateRange.value = DateRange.ALL; storeFilter.value = null }
 
     fun refresh() = viewModelScope.launch { c.coordinator.syncNow() }
-    fun delete(uuid: String) = viewModelScope.launch { repo.deleteReceipt(uuid) }
-    fun restore(uuid: String) = viewModelScope.launch { repo.restoreReceipt(uuid) }
+
+    // Suspend, and not cancelled with the screen, so a snack can follow the finished write.
+    suspend fun delete(uuid: String) = withContext(NonCancellable) { repo.deleteReceipt(uuid) }
+    suspend fun restore(uuid: String) = withContext(NonCancellable) { repo.restoreReceipt(uuid) }
+
+    /** "Looks good" by swipe. False when the receipt is still being read (nothing changed). */
+    suspend fun confirm(uuid: String): Boolean = withContext(NonCancellable) { repo.confirm(uuid) }
+    suspend fun unconfirm(uuid: String) = withContext(NonCancellable) { repo.unconfirm(uuid) }
     fun purge(uuid: String) = viewModelScope.launch { repo.purgeReceipt(uuid) }
     fun confirmAllWithoutFlags() = viewModelScope.launch { repo.confirmAllWithoutFlags(ui.value.confirmableWithoutFlags.map { it.uuid }) }
 }
