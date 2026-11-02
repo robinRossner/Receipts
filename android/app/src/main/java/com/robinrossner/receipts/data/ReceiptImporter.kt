@@ -2,6 +2,7 @@ package com.robinrossner.receipts.data
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.robinrossner.receipts.data.db.AppDatabase
 import com.robinrossner.receipts.data.sync.AppPaths
 import com.robinrossner.receipts.data.sync.AtomicFile
@@ -77,7 +78,7 @@ class ReceiptImporter(
      * with the number of pictures that could not be read at all (the iPhone's "photo(s) could not be loaded").
      */
     fun import(pictures: List<Uri>, onBatchDone: ((unreadable: Int) -> Unit)? = null) {
-        val added = pictures.map { ImportJob(UUID.randomUUID().toString(), it.lastPathSegment?.substringAfterLast('/') ?: "photo", ImportJob.State.Queued) }
+        val added = pictures.map { ImportJob(UUID.randomUUID().toString(), displayName(it), ImportJob.State.Queued) }
         _jobs.update { it + added }
         val started = pictures.zip(added).map { (uri, job) -> sources[job.id] = uri; start(job.id) }
         if (onBatchDone != null) scope.launch {
@@ -86,6 +87,14 @@ class ReceiptImporter(
             withContext(Dispatchers.Main) { onBatchDone(failed) }
         }
     }
+
+    /** The picture's own file name for the uploads panel; the photo picker's URIs end in a bare number, so ask the provider first. */
+    private fun displayName(uri: Uri): String =
+        runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
 
     private fun start(id: String): Job {
         val uri = sources.getValue(id)
