@@ -207,8 +207,8 @@ class SyncCoordinator(
     /** Settings > "Test connection": `/health` (is it a server at all) then `/status` (does it accept the token). */
     suspend fun testConnection(serverUrl: String, token: String?): ConnectionTest {
         val base = ServerUrl.apiBase(serverUrl, debugBuild)
-            ?: return ConnectionTest(false, "That is not a valid server URL. Use https://… (plain http only to the emulator host in debug builds).")
-        if (token.isNullOrEmpty()) return ConnectionTest(false, "Enter the receipts token first.")
+            ?: return ConnectionTest(false, "That is not a valid server URL.")
+        if (token.isNullOrEmpty()) return ConnectionTest(false, "Save the receipts token first.")
         val api = makeApi(base, token)
         return try {
             api.health()
