@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -23,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,7 +53,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun FlaggedItemMark(dictionaryId: String, suggestedCategory: String?, modifier: Modifier = Modifier) {
     val c = AppTheme.colors
-    var open by remember { mutableStateOf(false) }
+    var open by rememberSaveable { mutableStateOf(false) }
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.AutoMirrored.Outlined.LabelOff, null, Modifier.size(12.dp), tint = c.red)
         Text(FlaggedText.mark(suggestedCategory), Modifier.weight(1f, fill = false).testTag("flagMark"), style = AppTheme.body(12, color = c.red))
@@ -76,7 +78,7 @@ private fun FlaggedSheet(container: AppContainer, dictionaryId: String, onClose:
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { vm.clearNotice() }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = sheetState, containerColor = AppTheme.colors.desk) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = sheetState, containerColor = AppTheme.colors.desk, modifier = Modifier.statusBarsPadding()) {
         FlaggedContent(
             vm, openReceipt = null,
             close = { scope.launch { sheetState.hide() }.invokeOnCompletion { onClose() } },

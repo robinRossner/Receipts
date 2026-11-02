@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -395,7 +396,7 @@ fun FilterSheet(
     val colors = AppTheme.colors
     val minHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
     val confirmable = ui.confirmableWithoutFlags.size
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = colors.desk) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = colors.desk, modifier = Modifier.statusBarsPadding()) {
         Column(Modifier.fillMaxWidth().heightIn(min = minHeight)) {
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
                 Text("Filters", style = AppTheme.display(18, colors.ink))

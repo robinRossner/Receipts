@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
@@ -452,7 +453,7 @@ private fun CategoryChooser(
         scope.launch { sheetState.hide() }.invokeOnCompletion { then() }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = c.desk) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = c.desk, modifier = Modifier.statusBarsPadding()) {
         Column(Modifier.fillMaxWidth().heightIn(min = minHeight).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Choose a category", style = AppTheme.display(22, c.ink))
             PickerGroup {
