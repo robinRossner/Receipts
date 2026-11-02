@@ -70,11 +70,11 @@ fun MenuPickerRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, style = AppTheme.body(13, color = c.inkSoft), maxLines = 1)
-            Spacer(Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
+            // Fills the rest of the row and aligns to its end, so the value sits against the up/down mark at the right edge.
             Text(
                 value.ifEmpty { "—" }, style = AppTheme.body(14, color = c.ink), textAlign = TextAlign.End,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(2f, fill = false),
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(6.dp))
             Icon(Icons.Filled.UnfoldMore, null, Modifier.size(14.dp), tint = c.inkSoft)
