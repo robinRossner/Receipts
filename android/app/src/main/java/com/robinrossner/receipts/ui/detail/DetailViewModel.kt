@@ -4,18 +4,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.robinrossner.receipts.AppContainer
 import com.robinrossner.receipts.data.Rules
+import com.robinrossner.receipts.data.Taxonomy
 import com.robinrossner.receipts.data.db.ItemRow
 import com.robinrossner.receipts.data.db.LocalStatus
 import com.robinrossner.receipts.data.db.ReceiptEntity
 import com.robinrossner.receipts.data.sync.PhotoFetchResult
 import com.robinrossner.receipts.data.sync.StringLists
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -29,11 +34,30 @@ sealed interface PhotoUi {
 @OptIn(ExperimentalCoroutinesApi::class)
 class DetailViewModel(private val c: AppContainer, val uuid: String) : ViewModel() {
     private val repo = c.repository
-    val receipt: StateFlow<ReceiptEntity?> = repo.observeReceipt(uuid).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** The first read of the receipt row has happened (null before that). */
+    private data class Loaded(val receipt: ReceiptEntity?)
+    private val loadedReceipt: StateFlow<Loaded?> = repo.observeReceipt(uuid).map { Loaded(it) }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val receipt: StateFlow<ReceiptEntity?> = loadedReceipt.map { it?.receipt }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** False until the receipt row was read; then `receipt == null` means it does not exist (any more). */
+    val loaded: StateFlow<Boolean> = loadedReceipt.map { it != null }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val items: StateFlow<List<ItemRow>> = repo.observeItems(uuid).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val knownStores: StateFlow<List<String>> = repo.observeStoresInUse()
         .flatMapLatest { used -> flowOf((Rules.canonicalStoreNames + used).toSet().sorted()) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, Rules.canonicalStoreNames)
+
+    /** The merged category tree (bundled plus user-added), for the item pickers. */
+    val taxonomy: StateFlow<Taxonomy> get() = repo.taxonomy
+
+    private val working = MutableStateFlow(0)
+
+    /** True while a retry upload / retry extraction / re-run / discard runs (iOS `busyReceiptIDs`): the form dims and `Looks good` waits. */
+    val busy: StateFlow<Boolean> = working.map { it > 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private suspend fun <T> busyWhile(block: suspend () -> T): T {
+        working.update { it + 1 }
+        try { return block() } finally { working.update { it - 1 } }
+    }
 
     private val fetchNote = MutableStateFlow<String?>(null)
     private val fetching = MutableStateFlow(false)
@@ -67,32 +91,41 @@ class DetailViewModel(private val c: AppContainer, val uuid: String) : ViewModel
         }
     }
 
-    fun confirm() = viewModelScope.launch { repo.confirm(uuid) }
+    /** Confirms the receipt; join the job to wait for the write. */
+    fun confirm(): Job = viewModelScope.launch { repo.confirm(uuid) }
     fun updateStore(text: String) = viewModelScope.launch { repo.updateStore(uuid, text) }
     fun updateDateTime(date: String, time: String?) = viewModelScope.launch { repo.updateDateTime(uuid, date, time) }
     fun updateTotal(total: Double?) = viewModelScope.launch { repo.updateTotal(uuid, total) }
-    fun deleteReceipt() = viewModelScope.launch { repo.deleteReceipt(uuid) }
+    /** Soft delete; [onDeleted] runs after the write (it shows the undo bar). */
+    fun deleteReceipt(onDeleted: () -> Unit = {}) = viewModelScope.launch { repo.deleteReceipt(uuid); onDeleted() }
+    suspend fun restoreReceipt() = repo.restoreReceipt(uuid)
     fun addItem(name: String, qty: Double, price: Double) = viewModelScope.launch { repo.addItem(uuid, name, qty, price) }
-    fun deleteItem(itemUuid: String) = viewModelScope.launch { repo.deleteLineItem(itemUuid) }
+    /** Soft delete of a line item; [onDeleted] runs after the write (it shows the undo bar). */
+    fun deleteItem(itemUuid: String, onDeleted: () -> Unit = {}) = viewModelScope.launch { repo.deleteLineItem(itemUuid); onDeleted() }
+    suspend fun restoreItem(itemUuid: String) = repo.restoreLineItem(itemUuid)
 
-    /** "Save" on an item: its category goes to the shared dictionary entry, quantity and price to the line item. */
-    fun saveItem(item: ItemRow, qty: Double, price: Double, category: String, subcategory: String, itemGroup: String, translation: String?) {
+    /**
+     * "Save" on an item: its category and translation go to the shared dictionary entry (always, as on the iPhone: this
+     * also confirms the category and clears the review flag), then quantity and price to the line item. Join to wait.
+     */
+    fun saveItem(item: ItemRow, qty: Double, price: Double, category: String, subcategory: String, itemGroup: String, translation: String?): Job =
         viewModelScope.launch {
-            if (category != item.category || subcategory != item.subcategory || itemGroup != item.itemGroup || translation != item.translationEn) {
-                repo.correctItem(item.itemDictionaryId, category, subcategory, itemGroup, translation)
-            }
+            repo.correctItem(item.itemDictionaryId, category, subcategory, itemGroup, translation)
             repo.updateLineItem(item.uuid, qty, price)
         }
-    }
 
     suspend fun usage(dictId: String) = repo.dictionaryUsage(dictId)
 
-    fun retryUpload() = viewModelScope.launch { repo.retryUpload(uuid); c.coordinator.syncNow() }
-    fun discardFailedUpload(then: () -> Unit) = viewModelScope.launch { repo.discardFailedUpload(uuid); then() }
+    fun retryUpload() = viewModelScope.launch { busyWhile { repo.retryUpload(uuid); c.coordinator.syncNow() } }
+    fun discardFailedUpload(then: () -> Unit) = viewModelScope.launch { busyWhile { repo.discardFailedUpload(uuid) }; then() }
     val reviewReasons: List<String> get() = StringLists.decode(receipt.value?.reviewReasons)
 
-    /** "Retry extraction": the server queues it again (the phone has no AI). */
+    /** "Retry extraction" and "Re-run extraction": the server queues it again (the phone has no AI). Failures go to [onError]. */
     fun retryExtraction(onError: (String) -> Unit) = viewModelScope.launch {
-        try { c.coordinator.retryExtraction(uuid) } catch (e: Exception) { onError("Retrying the extraction failed: ${e.message}") }
+        busyWhile {
+            try { c.coordinator.retryExtraction(uuid) } catch (e: CancellationException) { throw e } catch (e: Exception) {
+                onError("Retrying the extraction failed: ${e.message}")
+            }
+        }
     }
 }
