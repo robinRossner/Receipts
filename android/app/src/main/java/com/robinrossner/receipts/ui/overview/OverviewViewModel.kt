@@ -13,10 +13,12 @@ import com.robinrossner.receipts.data.StatsSummary
 import com.robinrossner.receipts.data.StoreTotal
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -45,7 +47,7 @@ data class OverviewUi(
             RangeMode.ALL -> "All time"
             RangeMode.CUSTOM -> "${minOf(customStart, customEnd)} – ${maxOf(customStart, customEnd)}"
             RangeMode.YEAR -> cursor.year.toString()
-            RangeMode.MONTH -> DateTimeFormatter.ofPattern("LLLL yyyy", Locale.getDefault()).format(cursor)
+            RangeMode.MONTH -> DateTimeFormatter.ofPattern("LLLL yyyy", Locale.US).format(cursor)
         }
 
     val previousLabel get() = if (mode == RangeMode.YEAR) "last year" else "last month"
@@ -81,6 +83,9 @@ class OverviewViewModel(private val c: AppContainer) : ViewModel() {
     private val repo = c.repository
     private val _ui = MutableStateFlow(OverviewUi())
     val ui: StateFlow<OverviewUi> = _ui
+
+    /** Items still without a category (the quiet row under the total; hidden at zero). */
+    val flaggedItemCount: StateFlow<Int> = repo.observeFlaggedCount().stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     init {
         viewModelScope.launch {
