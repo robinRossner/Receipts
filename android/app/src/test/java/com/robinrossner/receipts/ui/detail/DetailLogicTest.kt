@@ -2,6 +2,7 @@ package com.robinrossner.receipts.ui.detail
 
 import com.robinrossner.receipts.data.Taxonomy
 import com.robinrossner.receipts.data.db.ItemRow
+import com.robinrossner.receipts.ui.PhotoUi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -145,5 +146,27 @@ class DetailLogicTest {
         assertEquals(0f, PhotoZoom.maxPan(300f, 1f, 400f), 1e-6f)
         assertEquals(0f, PhotoZoom.maxPan(300f, 1.3f, 400f), 1e-6f)
         assertEquals(100f, PhotoZoom.maxPan(300f, 2f, 400f), 1e-6f)
+    }
+
+    @Test
+    fun theTabShowsTheCachedPhotoWhateverElseIsKnown() {
+        assertEquals(PhotoUi.Ready("a.jpg"), DetailLogic.photoState("a.jpg", "server", "The photo could not be loaded (x).", fetching = true))
+        assertEquals(PhotoUi.Ready("a.jpg"), DetailLogic.photoState("a.jpg", "archived", null, fetching = false))
+    }
+
+    @Test
+    fun aReceiptWithoutAPhotoSaysSoEvenAfterAFailedFetch() {
+        // The fetch for a receipt with no photo answers "This receipt has no photo."; it must not come out wrapped in "could not be loaded (...)".
+        val note = "The photo could not be loaded (This receipt has no photo.)."
+        assertEquals(PhotoUi.Note("This receipt has no photo."), DetailLogic.photoState(null, "none", note, fetching = false))
+        assertEquals(PhotoUi.Note("This receipt has no photo."), DetailLogic.photoState(null, null, note, fetching = false))
+    }
+
+    @Test
+    fun aPhotoTheServerShouldHoldExplainsAFailedFetchOrKeepsLoading() {
+        assertEquals(PhotoUi.Note("The photo could not be loaded (offline)."), DetailLogic.photoState(null, "server", "The photo could not be loaded (offline).", fetching = false))
+        assertEquals(PhotoUi.Loading, DetailLogic.photoState(null, "server", null, fetching = true))
+        assertEquals(PhotoUi.Note("Loading the photo from the server…"), DetailLogic.photoState(null, "server", null, fetching = false))
+        assertEquals(PhotoUi.Note("This photo is on your laptop."), DetailLogic.photoState(null, "archived", null, fetching = false))
     }
 }

@@ -3,6 +3,7 @@ package com.robinrossner.receipts.ui.detail
 import com.robinrossner.receipts.data.Rules
 import com.robinrossner.receipts.data.Taxonomy
 import com.robinrossner.receipts.data.db.ItemRow
+import com.robinrossner.receipts.ui.PhotoUi
 import com.robinrossner.receipts.ui.components.fmtMoney
 import com.robinrossner.receipts.ui.components.parseDecimal
 import com.robinrossner.receipts.ui.components.trimmedNumber
@@ -50,6 +51,19 @@ object DetailLogic {
             t == saved -> StoreCommit.NoChange
             else -> StoreCommit.Update(t)
         }
+    }
+
+    /**
+     * What the Photo tab shows. A cached copy wins. A fetch failure ([fetchNote]) is only the reason when the server is
+     * supposed to hold the photo; otherwise the receipt's own note applies, never "could not be loaded" for a receipt
+     * that has no photo (`ReceiptPhotoView`, iPhone).
+     */
+    fun photoState(localPhoto: String?, photoLocation: String?, fetchNote: String?, fetching: Boolean): PhotoUi = when {
+        localPhoto != null -> PhotoUi.Ready(localPhoto)
+        photoLocation == "server" && fetchNote != null -> PhotoUi.Note(fetchNote)
+        photoLocation == "archived" -> PhotoUi.Note("This photo is on your laptop.")
+        photoLocation == "server" -> if (fetching) PhotoUi.Loading else PhotoUi.Note("Loading the photo from the server…")
+        else -> PhotoUi.Note("This receipt has no photo.")
     }
 
     fun totalString(total: Double?): String = total?.let { String.format(Locale.US, "%.2f", it) }.orEmpty()

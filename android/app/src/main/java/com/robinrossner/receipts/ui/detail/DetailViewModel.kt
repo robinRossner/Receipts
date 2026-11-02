@@ -10,6 +10,7 @@ import com.robinrossner.receipts.data.db.LocalStatus
 import com.robinrossner.receipts.data.db.ReceiptEntity
 import com.robinrossner.receipts.data.sync.PhotoFetchResult
 import com.robinrossner.receipts.data.sync.StringLists
+import com.robinrossner.receipts.ui.detail.DetailLogic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -65,15 +66,13 @@ class DetailViewModel(private val c: AppContainer, val uuid: String) : ViewModel
     /** Photo tab content: the cached file, or why there is none ("This photo is on your laptop."). */
     val photo: StateFlow<PhotoUi> = combine(receipt, fetchNote, fetching) { r, note, busy ->
         val file = c.paths.resolve(r?.localPhoto)
-        when {
-            r == null -> PhotoUi.Loading
-            file != null && file.isFile -> PhotoUi.Ready(r.localPhoto.orEmpty())
-            note != null -> PhotoUi.Note(note)
-            r.photoLocation == "archived" -> PhotoUi.Note("This photo is on your laptop.")
-            r.photoLocation == "server" -> if (busy || r.extractionStatus == LocalStatus.PENDING_UPLOAD) PhotoUi.Loading else PhotoUi.Note("Loading the photo from the server…")
-            r.localPhoto == null -> PhotoUi.Note("This receipt has no photo.")
-            else -> PhotoUi.Note("This receipt has no photo.")
-        }
+        if (r == null) PhotoUi.Loading
+        else DetailLogic.photoState(
+            localPhoto = r.localPhoto.takeIf { file != null && file.isFile },
+            photoLocation = r.photoLocation,
+            fetchNote = note,
+            fetching = busy || r.extractionStatus == LocalStatus.PENDING_UPLOAD,
+        )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PhotoUi.Loading)
 
     /** The phone shows its cached copy; if there is none and the server still holds the photo it is downloaded now. */
