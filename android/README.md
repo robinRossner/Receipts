@@ -11,7 +11,7 @@ What is in it:
 - Compose screens that follow the iPhone's design tokens, fonts, components and texts (list and capture, detail, Overview with canvas charts, Settings, "Without a category"), an adaptive launcher icon, light and dark theme following the system.
 - JVM unit tests (sync merge, last write wins, tombstones, wire format, capability guard, checksum mismatch, flagged items, taxonomy, review queue, UI logic, HTTP behaviour).
 
-Not exercised on a device: the ML Kit document scanner (`Scan receipt`; the emulator has no camera pipeline for it, the code path is the library's own screen) and pinch zoom on the Photo tab (needs two fingers; the zoom buttons and double tap work). The release build is unsigned unless you add a keystore (below).
+Not exercised to the end on a device: the ML Kit document scanner. On the emulator `Scan receipt` opens Google Play services' scanner, which cannot download its modules there ("Something went wrong"); cancelling returns to the app without a crash, but no scan could be completed. Pinch zoom on the Photo tab needs two fingers (the zoom buttons and double tap work). The failure states were exercised against the throwaway server: extraction failed (Retry extraction), upload rejected (server limit lowered through `RECEIPTS_MAX_PHOTO_BYTES` on the throwaway instance), and the error bar. The release build is unsigned unless you add a keystore (below).
 
 ## Build
 
