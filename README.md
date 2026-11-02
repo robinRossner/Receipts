@@ -4,7 +4,7 @@ A native macOS port of the `Receipts_process` project (Python + FastAPI + browse
 same look, same functionality, but a single Swift app with no server process, no browser tab,
 and no Python to install.
 
-> **Where things live.** This repo holds the Mac and iPhone apps (root), the paused Android app (`android/`) and the
+> **Where things live.** This repo holds the Mac and iPhone apps (root), the Android app (`android/`, ported from the iPhone app, see `android/README.md`) and the
 > server they sync with: `backend/` (FastAPI + SQLite, own `pyproject.toml`, `Dockerfile` and Alembic setup), the API
 > contract `docs/api/receipts.md` and the deployment scripts in `deploy/` (see `deploy/README.md`). The e2e tests below
 > start that server from a temp var dir; `RECEIPTS_BACKEND_DIR` (default: this repo's `backend/`) points them at another copy.
