@@ -6,7 +6,9 @@ import com.robinrossner.receipts.data.api.PushRequest
 import com.robinrossner.receipts.data.api.PushStatus
 import com.robinrossner.receipts.data.api.WireDictionaryEntry
 import com.robinrossner.receipts.data.api.WireTaxonomyAddition
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -18,7 +20,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import okhttp3.OkHttpClient
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okio.ForwardingSource
+import okio.Buffer
+import okio.buffer
 import org.junit.Test
+import java.util.Collections
+import java.util.concurrent.Executors
 
 /** The real HTTP client against a mock server: the bytes on the wire for flags and additions, and decoding of answers. */
 class HttpPushTest {
@@ -72,5 +81,35 @@ class HttpPushTest {
         val page = client.pull("c1", 100)
         assertEquals("A > B > C", page.taxonomyAdditions?.single()?.label)
         assertTrue(page.dictionary.single().categoryFlagged == true)
+    }
+
+    @Test
+    fun responseBodiesAreNeverReadOnTheCallersThread() = runBlocking {
+        // On a phone the callers are view models on the main thread, where reading a body throws NetworkOnMainThreadException
+        // (the photo download crashed the Photo tab). The test's "main" is a thread with a known name.
+        val readers = Collections.synchronizedSet(mutableSetOf<String>())
+        val client = OkHttpClient.Builder().addNetworkInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            val source = object : ForwardingSource(response.body.source()) {
+                override fun read(sink: Buffer, byteCount: Long): Long = super.read(sink, byteCount).also { readers += Thread.currentThread().name }
+            }.buffer()
+            response.newBuilder().body(source.asResponseBody(response.body.contentType(), response.body.contentLength())).build()
+        }.build()
+        mock.start()
+        val api = HttpReceiptsApi(mock.url("/api/v1/receipts"), "secret-token", client)
+        val main = Executors.newSingleThreadExecutor { Thread(it, "pretend-main") }
+        try {
+            mock.enqueue(MockResponse().setHeader("Content-Type", "image/jpeg").setBody("photo-bytes"))
+            mock.enqueue(MockResponse().setBody("""{"unarchived_count": 0}"""))
+            withContext(main.asCoroutineDispatcher()) {
+                assertEquals("photo-bytes", String(api.downloadPhoto("/api/v1/receipts/r1/photo").data))
+                api.status()
+            }
+        } finally {
+            main.shutdown()
+        }
+        assertTrue("bodies were read", readers.isNotEmpty())
+        // The coroutine debug agent appends " @coroutine#n" to the thread name.
+        assertTrue("a body was read on the caller's thread: $readers", readers.none { it.startsWith("pretend-main") })
     }
 }

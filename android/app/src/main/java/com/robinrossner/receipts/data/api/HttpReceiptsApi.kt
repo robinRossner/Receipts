@@ -2,7 +2,9 @@ package com.robinrossner.receipts.data.api
 
 import com.robinrossner.receipts.data.sync.Sha256
 import com.robinrossner.receipts.data.sync.SyncDate
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
@@ -35,7 +37,7 @@ class HttpReceiptsApi(
 
     override suspend fun health() {
         val request = Request.Builder().url(ServerUrl.healthUrl(baseUrl)).get().build()
-        client.newBuilder().callTimeout(15, TimeUnit.SECONDS).build().newCall(request).await().use { checkOk(it) }
+        client.newBuilder().callTimeout(15, TimeUnit.SECONDS).build().newCall(request).executeAndRead { checkOk(it) }
     }
 
     override suspend fun status(): ServerStatus = decode(send("GET", "status"))
@@ -48,7 +50,7 @@ class HttpReceiptsApi(
             .header("X-Content-SHA256", Sha256.hex(data))
             .put(data.toRequestBody(mediaType.toMediaType()))
             .build()
-        return decode(client.newCall(request).await().use { checkOk(it).body.string() })
+        return decode(client.newCall(request).executeAndRead { checkOk(it).body.string() })
     }
 
     override suspend fun retryExtraction(id: String) {
@@ -68,7 +70,7 @@ class HttpReceiptsApi(
         // `path` is the server-relative `download` value ("/api/v1/receipts/<id>/photo").
         val url = baseUrl.newBuilder().encodedPath(path).query(null).build()
         val request = Request.Builder().url(url).auth().get().build()
-        return client.newCall(request).await().use { response ->
+        return client.newCall(request).executeAndRead { response ->
             checkOk(response)
             DownloadedPhoto(response.body.bytes(), response.header("Content-Type"), response.header("X-Content-SHA256"))
         }
@@ -94,7 +96,7 @@ class HttpReceiptsApi(
         path.split('/').forEach { builder.addPathSegment(it) }
         query.forEach { (k, v) -> builder.addQueryParameter(k, v) }
         val request = Request.Builder().url(builder.build()).auth().method(method, body).build()
-        return client.newCall(request).await().use { checkOk(it).body.string() }
+        return client.newCall(request).executeAndRead { checkOk(it).body.string() }
     }
 
     private fun checkOk(response: Response): Response {
@@ -138,6 +140,12 @@ class HttpReceiptsApi(
         }
     }
 }
+
+/**
+ * Runs the call and [read]s the response on the IO dispatcher. Reading a body is blocking network IO, and the callers
+ * (view models, Settings) may be on the main thread, where it throws NetworkOnMainThreadException.
+ */
+private suspend fun <T> Call.executeAndRead(read: (Response) -> T): T = withContext(Dispatchers.IO) { await().use(read) }
 
 private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
     enqueue(object : Callback {
