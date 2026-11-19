@@ -67,6 +67,7 @@ Backend (Python 3.12+, [uv](https://docs.astral.sh/uv/)):
 
 Mac app: open `Receipts.xcodeproj` in Xcode and press Cmd-R, or run `swift test` for the unit tests. The default backend
 uses the logged-in `claude` CLI; Settings can switch it to the API or Ollama. Cloud sync is optional.
+iPhone app: pick the `ReceiptsiOS` scheme in the same project (the project is generated from `project.yml` with XcodeGen).
 The Android app is described in `android/README.md`.
 
 ## Stack
