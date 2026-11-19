@@ -28,3 +28,8 @@ DesignLab/DesignLab.xcodeproj/
 
 # Receipts.xcodeproj regenerates its workspace data
 Receipts.xcodeproj/project.xcworkspace/
+
+# env files (real values never committed)
+.env
+.env.*
+!.env.example
