@@ -5,6 +5,18 @@ and each item is filed under a category so you can see where the money goes. I b
 grocery receipts are the one place my spending is recorded in detail, and nothing I tried would read
 the abbreviated item names on them reliably.
 
+## Screenshots
+
+Both screenshots use made-up receipts from a debug-only demo data set (`Sources/ReceiptsApp/Database/DemoData.swift`).
+
+![Mac app: a receipt with its extracted line items and categories](docs/screenshots/mac-review.png)
+
+*Mac app: the receipt list and one receipt's line items, each filed under a category.*
+
+<img src="docs/screenshots/iphone-receipts.png" width="300" alt="iPhone app: the receipt list">
+
+*iPhone app: the receipt list, with receipts still to review at the top.*
+
 ## Example
 
 A photo of this receipt (made up):

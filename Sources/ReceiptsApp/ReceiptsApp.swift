@@ -29,6 +29,9 @@ struct ReceiptsApp: App {
                     if case .success(let urls) = result, !urls.isEmpty { store.upload(fileURLs: urls) }
                 }
                 .task {
+                    #if DEBUG
+                    await DemoData.seedIfRequested(db: store.db)
+                    #endif
                     await store.checkProviderReadiness()
                     await store.refreshList()
                     await store.runAutoBackupIfDue()

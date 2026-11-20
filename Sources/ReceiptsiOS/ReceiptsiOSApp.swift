@@ -27,6 +27,9 @@ struct ReceiptsiOSApp: App {
             RootView()
                 .environmentObject(store)
                 .task {
+                    #if DEBUG
+                    await DemoData.seedIfRequested(db: store.db)
+                    #endif
                     await store.refreshList()
                     store.startSync()   // sync on launch (no-op until the server is set up in Settings)
                 }
